@@ -55,9 +55,4 @@ if st.button("분석 시작"):
             st.error("데이터 서버 연결에 실패했습니다.")
 
 
-streamlit
-MLB-StatsAPI
-pandas
-requests
-pytz
-pybaseball  <-- 추가하세요
+
