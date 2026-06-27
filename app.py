@@ -4,42 +4,45 @@ import requests
 
 # 페이지 구성
 st.set_page_config(layout="wide")
-st.title("⚾ MLB 데이터 디버깅 센터")
+st.title("⚾ MLB 상세 분석 시스템")
 
-# [API 설정]
-API_KEY = "03e8cebecemsh5ae22ee471e893ap10ec28jsn96d260298651"
-HOST = "tank01-mlb-live-in-game-real-time-statistics.p.rapidapi.com"
-HEADERS = {"x-rapidapi-key": API_KEY, "x-rapidapi-host": HOST, "Content-Type": "application/json"}
+# [고정 레이아웃]
+col_left, col_right = st.columns([1, 3])
 
-# [데이터 호출 함수]
-def fetch_debug_data():
-    url = "https://tank01-mlb-live-in-game-real-time-statistics.p.rapidapi.com/getMLBBatterVsPitcher"
-    params = {"playerID": "592450"} # 일단 고정 ID로 테스트
+with col_left:
+    st.subheader("분석 도구")
+    player_id = st.text_input("선수 ID", value="592450")
+    btn_search = st.button("데이터 조회")
+
+with col_right:
+    st.subheader("데이터 대시보드")
     
-    try:
-        response = requests.get(url, headers=HEADERS, params=params, timeout=10)
+    if btn_search:
+        # API 호출 부분
+        API_KEY = "03e8cebecemsh5ae22ee471e893ap10ec28jsn96d260298651"
+        HOST = "tank01-mlb-live-in-game-real-time-statistics.p.rapidapi.com"
+        url = "https://tank01-mlb-live-in-game-real-time-statistics.p.rapidapi.com/getMLBBatterVsPitcher"
+        headers = {"x-rapidapi-key": API_KEY, "x-rapidapi-host": HOST}
+        params = {"playerID": player_id}
+        
+        response = requests.get(url, headers=headers, params=params)
+        
         if response.status_code == 200:
-            return response.json() # 결과 반환
+            data = response.json().get('body', {})
+            opponents = data.get('opponents', {})
+            
+            # [핵심] 쪼개진 opponents 데이터를 하나로 합치기
+            all_opponents = []
+            for key in opponents:
+                # 각 리스트 내의 항목들을 하나씩 추가
+                if isinstance(opponents[key], list):
+                    all_opponents.extend(opponents[key])
+            
+            if all_opponents:
+                df = pd.DataFrame(all_opponents)
+                st.dataframe(df, use_container_width=True)
+                st.success(f"선수 {player_id}에 대한 상대 전적 데이터를 성공적으로 불러왔습니다.")
+            else:
+                st.warning("상대 전적 데이터(opponents)가 비어있습니다.")
         else:
-            return f"에러코드: {response.status_code}"
-    except Exception as e:
-        return str(e)
-
-# [UI 영역]
-st.subheader("데이터 수신 상태 확인")
-if st.button("데이터 강제 호출 및 확인"):
-    raw_data = fetch_debug_data()
-    
-    # 1. 원본 데이터 출력 (이게 보여야 뭐가 문제인지 압니다)
-    st.write("### 원본 응답 데이터:")
-    st.json(raw_data) 
-    
-    # 2. 데이터 구조 파싱 시도
-    try:
-        if isinstance(raw_data, dict) and 'body' in raw_data:
-            st.success("데이터 파싱 성공!")
-            st.dataframe(pd.DataFrame([raw_data['body']]))
-        else:
-            st.warning("데이터가 비어있거나 구조가 'body'를 포함하지 않습니다.")
-    except Exception as e:
-        st.error(f"파싱 오류: {e}")
+            st.error("데이터 호출 실패")
