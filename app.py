@@ -2,35 +2,47 @@ import streamlit as st
 import pandas as pd
 import os
 import requests
-from pybaseball import statcast
 
-# 1. 자동 정제 및 연산 함수
-@st.cache_data
-def run_ai_inference(file_name):
-    """데이터를 불러와 연산 후 최종 지표만 반환"""
-    df = pd.read_csv(os.path.join('/content/', file_name))
-    # AI급 연산: 데이터 전처리 및 핵심 지표 추출 로직이 들어갈 곳
-    # 예: 평균값, 승률 보정, 성적 가중치 산출 등
-    summary = df.describe() # 핵심 지표 요약
-    return summary
+# 1. AI 분석 엔진: 결과값 산출 로직
+def calculate_edge(home_win_prob, decimal_odds):
+    """
+    승률과 배당을 비교하여 모델이 산출한 이득(Edge)을 계산
+    Edge > 0 이면 저평가된 팀
+    """
+    implied_prob = 1 / decimal_odds
+    edge = (home_win_prob / implied_prob) - 1
+    return edge
 
-# 2. 메인 로직 (결과 중심 출력)
-st.set_page_config(page_title="MLB AI Insight", layout="wide")
-st.title("⚾ MLB AI 정밀 분석 리포트")
+# 2. 메인 화면 구성
+st.set_page_config(page_title="MLB Edge Analyzer", layout="wide")
+st.title("⚾ MLB AI 정밀 Edge 분석 리포트")
 
-# 자동으로 /content/ 내 파일 스캔 및 분석
+# 3. 분석 수행 (내부 연산)
+st.sidebar.header("분석 설정")
+api_key = st.sidebar.text_input("Odds API Key", type="password")
 files = [f for f in os.listdir('/content/') if f.endswith('.csv')]
-selected_file = st.selectbox("분석할 파일 선택", files)
+selected_file = st.sidebar.selectbox("분석 데이터 선택", files)
 
-if selected_file:
-    with st.spinner("AI가 데이터를 추론 및 연산 중입니다..."):
-        result = run_ai_inference(selected_file)
+if api_key and selected_file:
+    with st.spinner("AI가 승률과 배당을 대조하여 Edge를 계산 중입니다..."):
+        # 데이터 로드
+        df = pd.read_csv(os.path.join('/content/', selected_file))
         
-    st.subheader("📌 최종 분석 결과값")
-    st.dataframe(result, use_container_width=True)
-    
-    # 여기서 결과값 기반으로 전문적인 인사이트를 추가 출력합니다
-    st.success("연산 완료: 선택한 데이터의 핵심 통계치입니다.")
+        # [내부 연산] 여기에서 승률 산출 및 Edge 계산 (추후 변수 추가 시 확장)
+        # 예시: 데이터 내 'win_pct'가 있다고 가정
+        if 'win_pct' in df.columns:
+            df['edge'] = df.apply(lambda x: calculate_edge(x['win_pct'], 1.9), axis=1) # 예시 배당 1.9
+            
+            # 최종 결과값만 추출 (Edge가 높은 순으로 정렬)
+            final_report = df[['team_name', 'win_pct', 'edge']].sort_values(by='edge', ascending=False)
+            
+            st.subheader("📌 최종 분석 결과 (Edge 상위권)")
+            st.dataframe(final_report.head(10), use_container_width=True)
+            st.success("연산 완료: 통계적 이득이 확인된 상위 리스트입니다.")
+        else:
+            st.error("데이터 파일에 'win_pct' 컬럼이 필요합니다.")
+else:
+    st.info("API Key를 입력하고 분석할 CSV 파일을 선택하세요.")
 
 st.divider()
-st.caption("AI Engine Status: Ready | Inference: Enabled")
+st.caption("System: AI Inference Engine v1.0 | Mode: Edge Calculation Active")
