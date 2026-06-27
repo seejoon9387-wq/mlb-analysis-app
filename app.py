@@ -1,7 +1,5 @@
 import streamlit as st
 import numpy as np
-import requests
-from bs4 import BeautifulSoup
 import time
 from datetime import datetime
 
@@ -12,17 +10,11 @@ team_db = {
 }
 player_to_team = {"r.devers": "bos", "a.judge": "nyy", "j.soto": "nyy"}
 
-# --- 2. 핵심 로직 엔진 ---
-@st.cache_data(ttl=3600)
-def get_live_lineup(team_code):
-    # 실제 웹사이트 크롤링 로직 (보안 헤더 포함)
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-    try:
-        time.sleep(1)
-        # 예시 URL (실제 사이트 구조에 맞게 추후 조정 가능)
-        return team_db.get(team_code.lower(), ["Unknown Player"])
-    except:
-        return None
+# --- 2. 분석 엔진 및 보정 로직 ---
+def get_split_factor(player_id, is_hitting, is_home):
+    """홈/원정 성적에 따른 보정 계수 반환 (예시값)"""
+    # 실제 환경에서는 API 데이터 연동
+    return 1.05 if is_home else 0.95 
 
 def resolve_lineup(user_input):
     user_input = user_input.lower().strip()
@@ -30,28 +22,26 @@ def resolve_lineup(user_input):
     if user_input in player_to_team: return team_db[player_to_team[user_input]]
     return [p.strip() for p in user_input.split(',')]
 
-def run_stat_based_simulation(h_lineup, a_lineup, days_range):
-    # 기간(days_range)에 따른 변동성 적용 시뮬레이션
-    base_prob = 0.5
-    volatility = 0.05 * (30 / days_range)
-    return max(0.2, min(0.8, base_prob + np.random.normal(0, volatility)))
-
-def generate_analysis_comment(team_name, power_score, market_implied_prob, calculated_win_prob):
-    comment = f"\n### 📝 분석 리포트: {team_name}\n"
-    if power_score > 0.350:
-        comment += f"- ⚾ **공격력:** 매우 강력합니다 (wOBA 기준 상위권 타자들 포진).\n"
-    elif power_score < 0.300:
-        comment += f"- ⚾ **공격력:** 최근 타격 부진이 예상됩니다. 라인업 무게감이 떨어집니다.\n"
+def analyze_split_adjusted_game(lineup, starter_id, is_home):
+    """보정 로직이 통합된 시뮬레이션"""
+    total_lineup_power = sum([0.300 * get_split_factor(p, True, is_home) for p in lineup])
+    pitcher_factor = get_split_factor(starter_id, False, is_home)
+    
+    # 코멘트 생성
+    if pitcher_factor < 0.9:
+        comment = "투수가 오늘 경기장에서 매우 강한(낮은 방어율) 기록을 가지고 있습니다."
+    elif pitcher_factor > 1.1:
+        comment = "투수가 오늘 경기장에서 다소 취약한(높은 방어율) 경향이 발견되었습니다."
     else:
-        comment += f"- ⚾ **공격력:** 평균적인 수준의 타선입니다.\n"
+        comment = "홈/원정 보정 결과, 투수진의 기복은 평이합니다."
         
-    diff = calculated_win_prob - market_implied_prob
-    if diff > 0.05:
-        comment += f"- 💰 **베팅 의견:** [강력 추천] 시장 승률({market_implied_prob:.1%}) 대비 실제 승률({calculated_win_prob:.1%})이 높습니다. '저평가' 구간입니다."
-    elif diff < -0.05:
-        comment += f"- 💰 **베팅 의견:** [주의] 현재 배당은 팀의 실질 전력보다 과대평가되었습니다. 리스크가 큽니다."
-    else:
-        comment += f"- 💰 **베팅 의견:** [중립] 배당률과 모델 예측치가 적정 수준입니다."
+    final_score = total_lineup_power / pitcher_factor
+    return final_score, comment
+
+def generate_analysis_comment(team_name, power_score, calculated_win_prob, pitcher_comment):
+    comment = f"\n### 📝 분석 리포트: {team_name}\n"
+    comment += f"- ⚾ **투수 기록 보정:** {pitcher_comment}\n"
+    comment += f"- 📊 **산출 승률:** {calculated_win_prob:.1%}"
     return comment
 
 # --- 3. UI 구성 ---
@@ -68,11 +58,10 @@ with tab1:
     h_code = st.text_input("홈 팀 코드 (예: BOS)", key="h_auto")
     a_code = st.text_input("원정 팀 코드 (예: NYY)", key="a_auto")
     if st.button("분석 실행 (자동)"):
-        h_lineup = get_live_lineup(h_code)
-        a_lineup = get_live_lineup(a_code)
-        prob = run_stat_based_simulation(h_lineup, a_lineup, days_range)
-        st.metric("홈 팀 승리 확률", f"{prob*100:.1f}%")
-        st.write(generate_analysis_comment("홈 팀", 0.360, 0.50, prob))
+        h_lineup = team_db.get(h_code.lower(), [])
+        prob, p_comment = analyze_split_adjusted_game(h_lineup, "p_01", True)
+        st.metric("홈 팀 보정 승리 확률", f"{prob*100:.1f}%")
+        st.write(generate_analysis_comment("홈 팀", 0.360, prob, p_comment))
 
 with tab2:
     h_man = st.text_area("홈 팀/선수 입력", key="h_man")
@@ -80,6 +69,6 @@ with tab2:
     if st.button("분석 실행 (수동)"):
         h_lineup = resolve_lineup(h_man)
         a_lineup = resolve_lineup(a_man)
-        prob = run_stat_based_simulation(h_lineup, a_lineup, days_range)
-        st.metric("홈 팀 승리 확률", f"{prob*100:.1f}%")
-        st.write(generate_analysis_comment("홈 팀", 0.360, 0.50, prob))
+        prob, p_comment = analyze_split_adjusted_game(h_lineup, "p_01", True)
+        st.metric("홈 팀 보정 승리 확률", f"{prob*100:.1f}%")
+        st.write(generate_analysis_comment("홈 팀", 0.360, prob, p_comment))
