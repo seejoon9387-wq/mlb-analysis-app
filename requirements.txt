@@ -1,8 +1,7 @@
 streamlit
 pandas
-requests
-mlb-statsapi
-pybaseball
-selenium
+numpy
 scikit-learn
 plotly
+requests
+beautifulsoup4
