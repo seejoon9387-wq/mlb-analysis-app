@@ -2,3 +2,9 @@ streamlit
 MLB-StatsAPI
 pandas
 requests
+
+streamlit
+MLB-StatsAPI
+pandas
+requests
+pytz
