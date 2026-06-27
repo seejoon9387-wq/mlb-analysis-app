@@ -3,37 +3,37 @@ import pandas as pd
 import requests
 
 st.set_page_config(layout="wide")
-st.title("⚾ MLB 데이터 강제 호출")
+st.title("⚾ MLB 선수 상세 통계 대시보드")
 
-if st.button("데이터 조회"):
+if st.button("데이터 강제 표 변환"):
     API_KEY = "03e8cebecemsh5ae22ee471e893ap10ec28jsn96d260298651"
     url = "https://tank01-mlb-live-in-game-real-time-statistics.p.rapidapi.com/getMLBBatterVsPitcher"
     params = {"playerID": "592450"}
     headers = {"x-rapidapi-key": API_KEY, "x-rapidapi-host": "tank01-mlb-live-in-game-real-time-statistics.p.rapidapi.com"}
     
-    response = requests.get(url, headers=headers, params=params)
-    data = response.json().get('body', {})
-    
-    # 1. opponents가 존재하는지, 딕셔너리인지 확인
-    opponents = data.get('opponents')
-    
-    if opponents is None:
-        st.warning("데이터가 없습니다 (opponents is None)")
-    elif isinstance(opponents, dict):
-        all_rows = []
-        for key, value in opponents.items():
-            if isinstance(value, list):
-                all_rows.extend(value)
+    try:
+        response = requests.get(url, headers=headers, params=params)
+        data = response.json()
         
-        if all_rows:
-            df = pd.DataFrame(all_rows)
-            st.dataframe(df, use_container_width=True)
+        # 'body' 안에 있는 'opponents' 데이터를 타겟팅
+        body = data.get('body', {})
+        opponents = body.get('opponents', {})
+
+        # 데이터를 리스트로 변환 (모든 키의 값을 하나로 합침)
+        all_records = []
+        if isinstance(opponents, dict):
+            for key in opponents:
+                if isinstance(opponents[key], list):
+                    all_records.extend(opponents[key])
+        
+        # 표로 변환
+        if all_records:
+            df = pd.DataFrame(all_records)
+            # 강제로 표 형태로 렌더링
+            st.table(df.head(20)) # 너무 길면 안 보이니 일단 상위 20개만
         else:
-            st.warning("데이터는 있으나 리스트 안이 비어있습니다.")
-    elif isinstance(opponents, list):
-        # opponents가 바로 리스트인 경우 대응
-        df = pd.DataFrame(opponents)
-        st.dataframe(df, use_container_width=True)
-    else:
-        st.write("데이터 구조를 파악할 수 없습니다:", type(opponents))
-        st.write(opponents)
+            st.write("데이터 구조가 표로 출력할 수 없는 형태입니다. 원본을 확인하세요:")
+            st.json(data)
+            
+    except Exception as e:
+        st.error(f"오류: {e}")
