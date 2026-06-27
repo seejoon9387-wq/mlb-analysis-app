@@ -1,60 +1,36 @@
 import streamlit as st
-import requests
 import pandas as pd
-import datetime
-import pytz
+import requests
+from io import StringIO
+import time
 
-# 1. 설정
-API_KEY = '9c3c5d2369ad9163a19c3e88dfa1f9c5'
+@st.cache_data(ttl=86400) # 데이터를 하루 동안 저장(캐싱)하여 속도 극대화
+def get_savant_data(year, metric_type):
+    # 매핑 데이터
+    metrics_map = {
+        'statcast': 'statcast', 'expected_statistics': 'expected-statistics', 
+        'run_value': 'run-value', 'outs_above_average': 'outs-above-average'
+    }
+    url_part = metrics_map.get(metric_type, 'statcast')
+    url = f"https://baseballsavant.mlb.com/leaderboard/{url_part}?year={year}&min=0&csv=true"
+    
+    headers = {"User-Agent": "Mozilla/5.0"}
+    response = requests.get(url, headers=headers)
+    
+    if response.status_code == 200:
+        return pd.read_csv(StringIO(response.text))
+    return pd.DataFrame()
 
-# 2. 메인 화면
-st.title("⚾ MLB 통합 분석기")
+# 웹 화면 (로그 확인용)
+st.title("⚾ 베이스볼 서번트 분석기")
+year = st.selectbox("연도 선택", [2024, 2025, 2026])
+metric = st.selectbox("지표 선택", ['statcast', 'expected_statistics', 'run_value', 'outs_above_average'])
 
-# 입력창들
-selected_date = st.date_input("경기 날짜를 선택하세요", datetime.date.today())
-home_team = st.text_input("홈 팀 이름 (예: Yankees)", "")
-away_team = st.text_input("원정 팀 이름 (예: Red Sox)", "")
-
-if st.button("분석 시작"):
-    if not home_team or not away_team:
-        st.warning("두 팀의 이름을 모두 입력해주세요!")
-    else:
-        st.info(f"{selected_date} 경기 분석 중...")
-        
-        # API에서 데이터 가져오기
-        url = "https://api.the-odds-api.com/v4/sports/baseball_mlb/odds"
-        params = {'apiKey': API_KEY, 'regions': 'us', 'markets': 'h2h', 'oddsFormat': 'decimal'}
-        response = requests.get(url, params=params)
-        
-        if response.status_code == 200:
-            data = response.json()
-            found = False
-            kst = pytz.timezone('Asia/Seoul')
-            
-            for match in data:
-                # 시간대 변환 로직
-                match_dt_utc = datetime.datetime.fromisoformat(match['commence_time'].replace('Z', '+00:00'))
-                match_dt_kst = match_dt_utc.astimezone(kst)
-                
-                # 팀 이름 필터링 (사용자 입력 포함 여부)
-                if (selected_date == match_dt_kst.date()) and \
-                   (home_team.lower() in match['home_team'].lower()) and \
-                   (away_team.lower() in match['away_team'].lower()):
-                    
-                    st.success("✅ 경기 데이터를 찾았습니다!")
-                    
-                    # 배당률 추출
-                    outcomes = match['bookmakers'][0]['markets'][0]['outcomes']
-                    h_odds = next(o['price'] for o in outcomes if o['name'] == match['home_team'])
-                    a_odds = next(o['price'] for o in outcomes if o['name'] == match['away_team'])
-                    
-                    st.write("### 📊 분석 결과")
-                    st.metric(label=f"홈팀: {match['home_team']} 배당", value=h_odds)
-                    st.metric(label=f"원정팀: {match['away_team']} 배당", value=a_odds)
-                    found = True
-                    break
-            
-            if not found:
-                st.error("해당 날짜와 팀에 맞는 경기 데이터를 찾을 수 없습니다.")
+if st.button("데이터 분석 시작"):
+    with st.spinner("서번트에서 데이터를 불러오는 중..."):
+        df = get_savant_data(year, metric)
+        if not df.empty:
+            st.success(f"데이터 {len(df)}건 확보!")
+            st.dataframe(df.head(10)) # 결과 미리보기
         else:
-            st.error("API 서버 연결에 실패했습니다.")
+            st.error("데이터를 가져올 수 없습니다.")
