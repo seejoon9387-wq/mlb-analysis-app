@@ -1,54 +1,74 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime, date
+import requests
+from datetime import date
 
 # 페이지 설정
 st.set_page_config(page_title="MLB AI Analyst", layout="wide")
 st.title("⚾ MLB AI 정밀 분석 시스템")
 
-# 레이아웃 구성: 좌측(분석 설정), 우측(결과 및 통계)
+# 데이터 관리: 세션 상태에 저장하여 데이터 유지
+if 'analyzed_data' not in st.session_state:
+    st.session_state['analyzed_data'] = None
+
+# [분석 엔진 함수]
+def run_analysis(player_id):
+    API_KEY = "03e8cebecemsh5ae22ee471e893ap10ec28jsn96d260298651"
+    url = "https://tank01-mlb-live-in-game-real-time-statistics.p.rapidapi.com/getMLBBatterVsPitcher"
+    params = {"playerID": player_id}
+    headers = {"x-rapidapi-key": API_KEY, "x-rapidapi-host": "tank01-mlb-live-in-game-real-time-statistics.p.rapidapi.com"}
+    
+    response = requests.get(url, headers=headers, params=params)
+    data = response.json().get('body', {})
+    opponents = data.get('opponents', [])
+    
+    all_data = []
+    for item in opponents:
+        if isinstance(item, list): all_data.extend(item)
+        else: all_data.append(item)
+    
+    if all_data:
+        df = pd.json_normalize(all_data)
+        st.session_state['analyzed_data'] = df
+        return True
+    return False
+
+# --- 레이아웃 ---
 left_col, right_col = st.columns([1, 2])
 
 with left_col:
     st.header("⚙️ 분석 환경 설정")
-    
-    # 1. 날짜 및 범위 선택 기능 추가
+    player_id = st.text_input("분석할 선수 ID", value="592450")
     target_date = st.date_input("분석 기준 날짜", value=date.today())
     date_range = st.slider("데이터 조회 범위 (최근 N일)", 1, 30, 7)
     
     st.divider()
     
-    # 2. 탭을 활용한 분석 방식 선택
     tab1, tab2 = st.tabs(["⚡ 자동 분석", "🔍 수동 분석"])
     
     with tab1:
-        st.subheader("팀 단위 자동 분석")
-        a_team = st.text_input("원정 팀(Away)")
-        h_team = st.text_input("홈 팀(Home)")
         if st.button("자동 분석 시작", type="primary"):
-            st.success(f"{target_date} 기준 {a_team} vs {h_team} 전력 산출 중...")
-            # 여기에 분석 로직 연동
-            
-    with tab2:
-        st.subheader("선수 단위 정밀 분석")
-        h_roster = st.text_area("홈 팀 주요 명단")
-        a_roster = st.text_area("원정 팀 주요 명단")
-        if st.button("정밀 분석 엔진 가동"):
-            st.info("선수별 스탯 정밀 분석 엔진 가동 중...")
+            with st.spinner("데이터 수집 및 분석 중..."):
+                if run_analysis(player_id):
+                    st.success("데이터 로드 완료!")
+                else:
+                    st.error("데이터를 가져올 수 없습니다.")
 
 with right_col:
     st.subheader("📊 분석 결과 및 통계 리포트")
     
-    # 분석 결과가 출력될 공간 (분석이 실행되면 이 곳에 그래프나 표가 나타남)
-    analysis_placeholder = st.empty()
-    
-    with analysis_placeholder.container():
-        st.info("좌측 설정창에서 분석 조건을 입력하고 분석을 실행해주세요.")
+    if st.session_state['analyzed_data'] is not None:
+        df = st.session_state['analyzed_data']
         
-        # 예시: 표가 출력될 영역
-        # df = get_analysis_data(...)
-        # st.dataframe(df, use_container_width=True)
+        # 핵심 컬럼 추출 및 정렬
+        cols = [c for c in ['batterName', 'pitcherName', 'H', 'AB', 'AVG', 'OPS', 'HR'] if c in df.columns]
+        st.dataframe(df[cols].sort_values(by='OPS', ascending=False), use_container_width=True)
+        
+        if st.button("분석 결과 초기화"):
+            st.session_state['analyzed_data'] = None
+            st.rerun()
+    else:
+        st.info("좌측에서 선수 ID를 입력하고 '자동 분석 시작'을 누르세요.")
 
-# 하단 상태창
 st.divider()
-st.caption("AI Analyst System v1.0 | 데이터 최적화 상태: 대기중")
+st.caption("AI Analyst System v1.0 | 데이터 최적화 상태: " + ("로드됨" if st.session_state['analyzed_data'] is not None else "대기중"))
