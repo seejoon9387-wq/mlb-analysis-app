@@ -18,12 +18,9 @@ def get_processed_data():
         df['batter_team'] = np.where(df['inning_topbot'] == 'top', df['away_team'], df['home_team'])
         df['pitcher_team'] = np.where(df['inning_topbot'] == 'top', df['home_team'], df['away_team'])
     
-    # [누적 로직 2] 선수별 주 소속팀(최빈값) 계산 및 매핑
+    # [누적 로직 2] 선수별 주 소속팀 최빈값 매핑
     batter_map = df.groupby('batter')['batter_team'].agg(lambda x: x.mode()[0] if not x.mode().empty else 'Unknown')
-    pitcher_map = df.groupby('pitcher')['pitcher_team'].agg(lambda x: x.mode()[0] if not x.mode().empty else 'Unknown')
-    
     df['batter_2026_team'] = df['batter'].map(batter_map)
-    df['pitcher_2026_team'] = df['pitcher'].map(pitcher_map)
     
     return df
 
@@ -32,11 +29,14 @@ def analyze_mlb_data(home, away):
     df = get_processed_data()
     if df is None: return None
     
-    # 팀 매핑된 컬럼을 기준으로 경기 데이터 필터링
+    # [누적 로직 3] 데이터 분포 확인 (로그 기록용)
+    team_distribution = df['batter_2026_team'].value_counts()
+    
+    # 데이터 필터링
     match_data = df[(df['home_team'] == home) & (df['away_team'] == away)]
     
     if match_data.empty:
-        return {"error": "해당 경기 데이터를 찾을 수 없습니다."}
+        return {"error": "데이터를 찾을 수 없습니다.", "distribution": team_distribution}
     
     return {
         'avg_velocity': match_data['release_speed'].mean() if 'release_speed' in match_data.columns else 0,
@@ -59,5 +59,10 @@ if st.button("분석 실행"):
         col1, col2 = st.columns(2)
         col1.metric("평균 투구 구속", f"{result['avg_velocity']:.1f} mph")
         col2.metric("평균 타구 속도", f"{result['launch_speed']:.1f} mph")
+    elif result and "error" in result:
+        st.error(result["error"])
+        # 필요시 하단에 분포 상태를 살짝 보여줄 수 있습니다.
+        with st.expander("데이터 분포 확인"):
+            st.write(result["distribution"].sort_index())
     else:
-        st.error("데이터 오류: 입력하신 팀명을 확인하거나 데이터 파일 상태를 점검하세요.")
+        st.error("데이터 파일이 존재하지 않습니다.")
