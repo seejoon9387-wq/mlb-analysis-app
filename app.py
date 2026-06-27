@@ -41,8 +41,6 @@ left_col, right_col = st.columns([1, 2])
 with left_col:
     st.header("⚙️ 분석 환경 설정")
     
-    # 입력 컴포넌트들을 항상 유지
-    player_id = st.text_input("분석할 선수 ID", value="592450")
     target_date = st.date_input("분석 기준 날짜", value=date.today())
     date_range = st.slider("데이터 조회 범위 (최근 N일)", 1, 30, 7)
     
@@ -51,14 +49,19 @@ with left_col:
     tab1, tab2 = st.tabs(["⚡ 자동 분석", "🔍 수동 분석"])
     
     with tab1:
+        # 입력란들을 다시 배치했습니다
+        a_team = st.text_input("원정 팀(Away)")
+        h_team = st.text_input("홈 팀(Home)")
+        player_id = st.text_input("분석할 선수 ID", value="592450")
+        
         if st.button("자동 분석 시작", type="primary"):
             with st.spinner("데이터 수집 중..."):
                 run_analysis(player_id)
-                st.rerun() # 데이터를 가져온 후 화면을 갱신하여 결과 출력
+                st.rerun() 
             
     with tab2:
-        h_roster = st.text_area("홈 팀 명단")
-        a_roster = st.text_area("원정 팀 명단")
+        h_roster = st.text_area("홈 팀 주요 명단")
+        a_roster = st.text_area("원정 팀 주요 명단")
         if st.button("정밀 분석 엔진 가동"):
             st.info("수동 분석 엔진 활성화 중...")
 
@@ -74,7 +77,7 @@ with right_col:
             st.session_state['analyzed_data'] = None
             st.rerun()
     else:
-        st.info("좌측에서 설정값을 입력하고 '자동 분석 시작'을 누르세요.")
+        st.info("좌측에서 팀/선수 ID를 입력하고 '자동 분석 시작'을 누르세요.")
 
 st.divider()
 st.caption("AI Analyst System v1.0 | 상태: " + ("데이터 로드 완료" if st.session_state['analyzed_data'] is not None else "대기중"))
