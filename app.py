@@ -55,3 +55,18 @@ if st.button("분석 시작"):
                 st.error("해당 매치업을 찾을 수 없습니다. 팀 이름을 정확히 입력했는지 확인해주세요.")
         else:
             st.error("데이터 서버 연결에 실패했습니다.")
+
+# 기존 코드의 '분석 시작' 버튼 부분 아래에 추가하세요
+import datetime
+
+# 날짜 선택기 추가
+selected_date = st.date_input("경기 날짜를 선택하세요", datetime.date.today())
+
+if st.button("분석 시작"):
+    # ... (기존 코드)
+    # 데이터 매칭 부분에서 날짜 비교 추가
+    for match in data:
+        # API의 commence_time은 ISO 형식(예: 2026-06-28T... )입니다.
+        match_date = match['commence_time'][:10] # 날짜만 잘라내기
+        if (home_team.lower() in match['home_team'].lower()) and (str(selected_date) == match_date):
+             # 여기서 분석 진행...
