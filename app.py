@@ -1,60 +1,65 @@
 import streamlit as st
 import statsapi
 import pandas as pd
+import requests
 import os
 
-# 페이지 설정
+# --- 1. 설정 및 초기값 ---
 st.set_page_config(page_title="MLB AI Analyst Pro", layout="wide")
-st.title("⚾ MLB 정밀 분석 및 통합 시스템")
+st.title("⚾ MLB AI 정밀 통합 분석 시스템")
 
-# 유틸리티 함수
+# 팀 명칭 매핑 (코드 유지보수용)
+TEAM_NAME_MAP = {
+    'Los Angeles Dodgers': 'LAD', 'San Diego Padres': 'SD', 'Atlanta Braves': 'ATL', 
+    'San Francisco Giants': 'SF', 'Houston Astros': 'HOU', 'Detroit Tigers': 'DET',
+    'Texas Rangers': 'TEX', 'Toronto Blue Jays': 'TOR', 'Cincinnati Reds': 'CIN', 
+    'Pittsburgh Pirates': 'PIT', 'Kansas City Royals': 'KC', 'Chicago White Sox': 'CWS',
+    'Philadelphia Phillies': 'PHI', 'New York Mets': 'NYM', 'Arizona Diamondbacks': 'ARI', 
+    'Tampa Bay Rays': 'TB', 'Colorado Rockies': 'COL', 'Minnesota Twins': 'MIN',
+    'Boston Red Sox': 'BOS', 'New York Yankees': 'NYY', 'Baltimore Orioles': 'BAL', 
+    'Washington Nationals': 'WSH', 'Milwaukee Brewers': 'MIL', 'Chicago Cubs': 'CHC',
+    'Cleveland Guardians': 'CLE', 'Seattle Mariners': 'SEA', 'St. Louis Cardinals': 'STL', 
+    'Miami Marlins': 'MIA', 'Los Angeles Angels': 'LAA', 'Oakland Athletics': 'OAK'
+}
+
+# --- 2. 함수 모음 ---
 @st.cache_data
 def load_csv_data(file_name):
-    file_path = os.path.join('/content/', file_name)
-    return pd.read_csv(file_path)
+    return pd.read_csv(os.path.join('/content/', file_name))
 
-def clean_team_name(input_name, available_teams):
-    input_name = str(input_name).strip().lower()
-    for team in available_teams:
-        if input_name in team.lower():
-            return team
-    return input_name
+def get_market_data(api_key):
+    url = "https://api.the-odds-api.com/v4/sports/baseball_mlb/odds"
+    params = {'apiKey': api_key, 'regions': 'us', 'markets': 'h2h', 'oddsFormat': 'decimal'}
+    response = requests.get(url, params=params)
+    return response.json()
 
-# 사이드바 설정
-mode = st.sidebar.radio("분석 모드 선택", ["공식 API 실시간 분석", "로컬 CSV 데이터 분석"])
+# --- 3. 사이드바 및 메인 로직 ---
+mode = st.sidebar.radio("분석 모드", ["배당 분석 (The Odds API)", "데이터 통계 분석 (CSV)", "공식 정보 (StatsAPI)"])
 
-# 분석 로직
-if mode == "공식 API 실시간 분석":
-    st.header("⚡ MLB Official Stats API")
-    team_name = st.text_input("팀 이름 입력 (예: Dodgers, Yankees)")
-    if st.button("실시간 팀 정보 조회"):
-        try:
-            team_info = statsapi.lookup_team(team_name)
-            if team_info:
-                st.json(team_info[0])
-            else:
-                st.error("팀 정보를 찾을 수 없습니다.")
-        except Exception as e:
-            st.error(f"API 호출 중 오류: {e}")
+if mode == "배당 분석 (The Odds API)":
+    st.header("📈 실시간 배당 분석")
+    api_key = st.text_input("Odds API Key 입력", type="password")
+    if st.button("분석 시작"):
+        data = get_market_data(api_key)
+        for match in data:
+            home, away = match['home_team'], match['away_team']
+            odds = match['bookmakers'][0]['markets'][0]['outcomes']
+            h_odds = next(o['price'] for o in odds if o['name'] == home)
+            st.write(f"**{away} vs {home}** | 배당: {h_odds}")
 
-elif mode == "로컬 CSV 데이터 분석":
-    st.header("📊 로컬 CSV 파일 정밀 분석")
+elif mode == "데이터 통계 분석 (CSV)":
+    st.header("📊 로컬 CSV 파일 분석")
     files = [f for f in os.listdir('/content/') if f.endswith('.csv')]
     selected_file = st.selectbox("파일 선택", files)
-    
     if selected_file:
         df = load_csv_data(selected_file)
-        col_list = df.columns.tolist()
-        target_col = st.selectbox("기준 컬럼 선택 (팀/선수명)", col_list)
-        search_query = st.text_input("검색어 입력 (자동 보정 적용)")
-        
-        if st.button("분석 엔진 가동"):
-            unique_values = df[target_col].unique().tolist()
-            corrected_query = clean_team_name(search_query, unique_values)
-            result = df[df[target_col].astype(str).str.contains(corrected_query, case=False, na=False)]
-            
-            st.success(f"검색어 '{search_query}'를 '{corrected_query}'(으)로 보정하여 분석 완료!")
-            st.dataframe(result, use_container_width=True)
+        st.dataframe(df)
+
+elif mode == "공식 정보 (StatsAPI)":
+    st.header("⚡ MLB 공식 API")
+    team_name = st.text_input("팀 이름 입력")
+    if st.button("조회"):
+        st.json(statsapi.lookup_team(team_name))
 
 st.divider()
-st.caption("시스템 상태: 정상 | 경로: /content/ | 데이터베이스: 로컬 CSV + 공식 MLB API")
+st.caption("시스템 상태: 통합 완료 | 경로: /content/")
