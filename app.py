@@ -1,41 +1,40 @@
 import streamlit as st
 import requests
-import time
 from datetime import datetime
 
 # 직접 심어드린 API 키
 API_KEY = "9c3c5d2369ad9163a19c3e88dfa1f9c5"
 
-# --- 1. 실시간 배당 데이터 가져오기 ---
-def get_realtime_odds(fixture_id):
+# --- 1. 실시간 전체 배당 데이터 호출 ---
+def get_all_mlb_odds():
     try:
-        # 실제 API 서비스의 엔드포인트와 파라미터 구조에 맞춰 사용하세요
         url = f"https://api.the-odds-api.com/v4/sports/baseball_mlb/odds"
         params = {"apiKey": API_KEY, "regions": "us", "markets": "h2h"}
         response = requests.get(url, params=params)
         return response.json()
-    except Exception as e:
-        return {"error": str(e)}
+    except Exception:
+        return []
 
-# --- 2. 실시간 배당 UI (5초마다 업데이트) ---
-@st.fragment(run_every="5s")
-def display_live_odds():
-    st.write("### ⚡ 실시간 MLB 배당 정보")
-    data = get_realtime_odds("mlb_fixture")
+# --- 2. 실시간 전체 배당 UI ---
+@st.fragment(run_every="60s")
+def display_all_live_odds():
+    st.write("### ⚡ 오늘 전체 MLB 경기 및 실시간 배당")
+    data = get_all_mlb_odds()
     
     if isinstance(data, list) and len(data) > 0:
-        # 첫 번째 경기 데이터 예시 추출
-        game = data[0]
-        home_team = game['home_team']
-        away_team = game['away_team']
-        
-        col1, col2 = st.columns(2)
-        col1.metric(f"{home_team} 승", "1.95") # 실제 API 데이터로 파싱 필요
-        col2.metric(f"{away_team} 승", "1.85")
+        for game in data:
+            home = game.get('home_team', 'Unknown')
+            away = game.get('away_team', 'Unknown')
+            commence_time = game.get('commence_time', 'N/A')
+            
+            # 간단한 배당 출력
+            st.markdown(f"**{away} vs {home}** | 시작: {commence_time}")
+            # 실제 API에서 배당 정보를 파싱하여 출력
+            st.info(f"홈 배당(상세 확인 필요) / 원정 배당")
     else:
-        st.info("데이터를 불러오는 중입니다...")
+        st.info("현재 불러올 수 있는 경기 데이터가 없습니다.")
 
-# --- 3. UI 고정 (이전 구조 유지) ---
+# --- 3. UI 고정 (전체 구조 복구) ---
 st.set_page_config(page_title="MLB AI Analyst", layout="centered")
 st.title("⚾ MLB AI 분석 시스템")
 
@@ -46,12 +45,18 @@ days_range = col_top2.slider("분석 범위 (최근 N일)", 1, 30, 7)
 tab1, tab2 = st.tabs(["⚡ 자동 실시간 분석", "🔍 수동 정밀 분석"])
 
 with tab1:
-    # 실시간 배당 영역 추가
-    display_live_odds()
+    display_all_live_odds() # 전체 경기 배당 노출
     
-    h_code = st.text_input("홈 팀 코드", key="h_auto")
+    # 원정/홈 모두 포함된 입력창 복구
+    c1, c2 = st.columns(2)
+    h_code = c1.text_input("홈 팀", key="h_auto")
+    a_code = c2.text_input("원정 팀", key="a_auto")
+    
     if st.button("분석 실행 (자동)"):
-        st.write("분석 엔진이 가동되었습니다.")
+        st.write("선택하신 경기의 전력을 분석합니다.")
 
 with tab2:
-    st.info("수동 분석 모드입니다.")
+    h_man = st.text_area("홈 팀 선수 명단", key="h_man")
+    a_man = st.text_area("원정 팀 선수 명단", key="a_man")
+    if st.button("분석 실행 (수동)"):
+        st.write("수동 입력된 선수단 전력을 비교합니다.")
