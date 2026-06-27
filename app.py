@@ -3,7 +3,7 @@ import pandas as pd
 import requests
 
 st.set_page_config(layout="wide")
-st.title("⚾ MLB 데이터 대시보드")
+st.title("⚾ MLB 상세 데이터 대시보드")
 
 col_ui, col_data = st.columns([1, 3])
 
@@ -12,7 +12,7 @@ with col_ui:
     run_btn = st.button("데이터 새로고침")
 
 with col_data:
-    st.subheader("실시간 배당/데이터 대시보드")
+    st.subheader("데이터 대시보드")
     data_placeholder = st.empty()
 
 if run_btn:
@@ -24,17 +24,19 @@ if run_btn:
     try:
         response = requests.get(url, headers=headers, params=params, timeout=10)
         if response.status_code == 200:
-            raw_json = response.json()
-            body_data = raw_json.get('body', {})
+            data = response.json().get('body', {})
             
-            # [핵심] JSON을 평탄화하여 표로 변환
-            # opponents 데이터가 리스트 형태라면 바로 DataFrame으로 변환
-            if isinstance(body_data, dict) and 'opponents' in body_data:
-                df = pd.DataFrame(body_data['opponents'])
+            # [강제 평탄화 로직]
+            # 데이터를 딕셔너리 리스트로 변환하여 표로 강제 변환
+            # json_normalize는 중첩된 데이터를 표 형태로 펼쳐줍니다.
+            df = pd.json_normalize(data)
+            
+            # 데이터프레임이 비어있지 않은지 확인
+            if not df.empty:
                 data_placeholder.dataframe(df, use_container_width=True)
             else:
-                data_placeholder.write(f"데이터 형식이 표로 변환하기 어렵습니다: {body_data}")
+                data_placeholder.warning("데이터가 비어있습니다.")
         else:
             data_placeholder.error(f"API 오류: {response.status_code}")
     except Exception as e:
-        data_placeholder.error(f"연결 오류: {e}")
+        data_placeholder.error(f"오류: {e}")
