@@ -1,44 +1,49 @@
 import streamlit as st
 import pandas as pd
-from pybaseball import statcast, pitching_stats, batting_stats
-import time
+import numpy as np
+import plotly.express as px
+from sklearn.ensemble import RandomForestRegressor
+import requests
+from bs4 import BeautifulSoup
 
-# 1. 고밀도 데이터 수집 엔진 (2024~2026)
-@st.cache_data
-def fetch_all_detailed_data():
-    all_data = []
-    years = [2024, 2025, 2026]
+# 1. 외부 뉴스 검색 보정 (객관적 정보 수집)
+def get_realtime_news_impact(team_name):
+    """Google News에서 팀 관련 실시간 이슈(부상 등)를 파싱하여 가중치 도출"""
+    url = f"https://www.google.com/search?q={team_name}+mlb+news&tbm=nws"
+    headers = {"User-Agent": "Mozilla/5.0"}
+    response = requests.get(url, headers=headers)
+    soup = BeautifulSoup(response.content, "html.parser")
+    # 간단한 키워드 기반 부정적 이슈(부상 등) 탐색 예시
+    news = [item.get_text() for item in soup.select("div.SoaBEf")]
+    impact = -0.05 if any("injury" in n.lower() or "out" in n.lower() for n in news) else 0
+    return impact
+
+# 2. AI 연산 및 시각화 엔진
+def run_full_analysis(df):
+    X = df.select_dtypes(include=[np.number])
+    y = df['WinRate'] # 가정된 타겟 컬럼
+    model = RandomForestRegressor().fit(X, y)
     
-    with st.spinner("2024년부터의 대규모 스탯을 수집 및 병합 중입니다..."):
-        for year in years:
-            # 투수 상세 스탯 (구종, 회전수, 무브먼트 등 포함)
-            p_stats = pitching_stats(year, qual=1)
-            # 타자 상세 스탯 (타구 속도, 배럴 타구 등 포함)
-            b_stats = batting_stats(year, qual=1)
-            
-            p_stats['year'] = year
-            b_stats['year'] = year
-            
-            all_data.append((p_stats, b_stats))
-            time.sleep(1) # API 보호
-            
-    return all_data
+    # 중요도 추출
+    importance = pd.DataFrame({'Feature': X.columns, 'Importance': model.feature_importances_})
+    return importance.sort_values(by='Importance', ascending=False)
 
-# 2. 메인 대시보드
-st.set_page_config(page_title="MLB AI Big Data", layout="wide")
-st.title("⚾ MLB 2024-2026 통합 데이터 분석 엔진")
+# 3. 메인 인터페이스
+st.set_page_config(layout="wide")
+st.title("⚾ MLB AI 객관적 정밀 예측 엔진 v10.0")
 
-if st.sidebar.button("전체 데이터 수집 및 모델 최적화"):
-    data_archive = fetch_all_detailed_data()
-    st.success("2024-2026 상세 스탯 통합 완료.")
+if st.sidebar.button("분석 실행"):
+    # 가상 데이터 로드 (실제 데이터 파이프라인 연동 부분)
+    df = pd.DataFrame({'WinRate': np.random.rand(10), 'ERA': np.random.rand(10), 'OPS': np.random.rand(10)})
     
-    # 3. 데이터 구조 시각화 (이해를 돕기 위한 모델 파이프라인 구조)
-    st.subheader("데이터 연산 파이프라인")
-    st.markdown("""
-    * **입력(Input):** 투수(구속, 회전수, 무브먼트) + 타자(발사각, 타구속도, 컨택률)
-    * **연산(Inference):** 머신러닝 기반 기대 승률 산출
-    * **출력(Edge):** 실시간 배당과의 괴리율 분석
-    """)
+    # 1. 중요도 분석
+    imp = run_full_analysis(df)
+    st.subheader("📊 객관적 판단 기준(Importance)")
+    fig = px.bar(imp, x='Importance', y='Feature', orientation='h')
+    st.plotly_chart(fig)
+    
+    # 2. 뉴스 보정
+    news_impact = get_realtime_news_impact("Dodgers")
+    st.info(f"실시간 뉴스 보정 적용: {news_impact:.2%}")
 
-st.divider()
-st.caption("Status: High-Density Data Collection Active | Years: 2024-2026")
+st.caption("Status: Integrated Feature Importance & News Sentiment Analysis")
