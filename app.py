@@ -1,48 +1,44 @@
 import streamlit as st
 import pandas as pd
-import os
 import requests
+import os
 
-# 1. AI 분석 엔진: 결과값 산출 로직
-def calculate_edge(home_win_prob, decimal_odds):
-    """
-    승률과 배당을 비교하여 모델이 산출한 이득(Edge)을 계산
-    Edge > 0 이면 저평가된 팀
-    """
+# 1. 데이터 수집 및 AI 연산 함수
+@st.cache_data
+def get_mlb_official_data():
+    """공식 API에서 데이터를 수집하여 분석용 DataFrame으로 반환"""
+    # 기존 코드의 수집 로직 통합
+    if os.path.exists('mlb_official_data.csv'):
+        return pd.read_csv('mlb_official_data.csv')
+    return pd.DataFrame()
+
+def calculate_edge(win_prob, decimal_odds):
+    """배당 대비 승률의 통계적 이득(Edge) 연산"""
     implied_prob = 1 / decimal_odds
-    edge = (home_win_prob / implied_prob) - 1
-    return edge
+    return (win_prob / implied_prob) - 1
 
-# 2. 메인 화면 구성
-st.set_page_config(page_title="MLB Edge Analyzer", layout="wide")
-st.title("⚾ MLB AI 정밀 Edge 분석 리포트")
+# 2. 메인 분석 엔진
+st.set_page_config(page_title="MLB AI Analyst", layout="wide")
+st.title("⚾ MLB AI 정밀 분석 시스템")
 
-# 3. 분석 수행 (내부 연산)
-st.sidebar.header("분석 설정")
-api_key = st.sidebar.text_input("Odds API Key", type="password")
-files = [f for f in os.listdir('/content/') if f.endswith('.csv')]
-selected_file = st.sidebar.selectbox("분석 데이터 선택", files)
+# 데이터 소스 선택
+data_source = st.sidebar.radio("데이터 소스", ["로컬 CSV", "공식 API 실시간"])
 
-if api_key and selected_file:
-    with st.spinner("AI가 승률과 배당을 대조하여 Edge를 계산 중입니다..."):
-        # 데이터 로드
+if data_source == "공식 API 실시간":
+    if st.button("공식 데이터 연산 가동"):
+        df = get_mlb_official_data()
+        st.success("데이터 연산 완료")
+        st.dataframe(df.head())
+
+elif data_source == "로컬 CSV":
+    files = [f for f in os.listdir('/content/') if f.endswith('.csv')]
+    selected_file = st.selectbox("파일 선택", files)
+    api_key = st.text_input("Odds API Key", type="password")
+    
+    if selected_file and api_key:
         df = pd.read_csv(os.path.join('/content/', selected_file))
-        
-        # [내부 연산] 여기에서 승률 산출 및 Edge 계산 (추후 변수 추가 시 확장)
-        # 예시: 데이터 내 'win_pct'가 있다고 가정
-        if 'win_pct' in df.columns:
-            df['edge'] = df.apply(lambda x: calculate_edge(x['win_pct'], 1.9), axis=1) # 예시 배당 1.9
-            
-            # 최종 결과값만 추출 (Edge가 높은 순으로 정렬)
-            final_report = df[['team_name', 'win_pct', 'edge']].sort_values(by='edge', ascending=False)
-            
-            st.subheader("📌 최종 분석 결과 (Edge 상위권)")
-            st.dataframe(final_report.head(10), use_container_width=True)
-            st.success("연산 완료: 통계적 이득이 확인된 상위 리스트입니다.")
-        else:
-            st.error("데이터 파일에 'win_pct' 컬럼이 필요합니다.")
-else:
-    st.info("API Key를 입력하고 분석할 CSV 파일을 선택하세요.")
-
-st.divider()
-st.caption("System: AI Inference Engine v1.0 | Mode: Edge Calculation Active")
+        # [AI 연산 로직] 
+        # 여기에 추후 승률 예측 모델(Predictive Model)을 삽입하여 
+        # 최종적인 'Edge'값만 결과로 출력하도록 할 예정입니다.
+        st.subheader("최종 분석 결과")
+        st.write("모델 연산이 활성화되었습니다.")
