@@ -7,47 +7,35 @@ from datetime import datetime, timedelta
 # --- 1. 데이터 및 안전 유틸리티 ---
 team_db = {"bos": 111, "nyy": 147}
 
-def parse_stats_string(stats_str):
-    """문자열 데이터를 딕셔너리로 파싱"""
-    try:
-        return json.loads(stats_str)
-    except:
-        return {}
-
 def get_safe_stat(stats_data, key):
-    """타입 확인 후 안전하게 값을 가져오는 함수"""
     if isinstance(stats_data, str):
-        stats_data = parse_stats_string(stats_data)
-    if isinstance(stats_data, dict):
-        return stats_data.get(key, 0.0)
-    return 0.0
+        try: stats_data = json.loads(stats_data)
+        except: stats_data = {}
+    return stats_data.get(key, 0.0) if isinstance(stats_data, dict) else 0.0
 
-# --- 2. 내부 분석 엔진 ---
+# --- 2. 내부 분석 엔진 (경기 상태 확인 로직 포함) ---
 def run_full_analysis(h_code, a_code, h_absent, a_absent):
-    """입력받은 데이터를 바탕으로 모든 보정값을 내부 계산"""
     try:
-        # 날짜를 하루 전으로 설정하여 재시도
-        prev_date = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
         h_id = team_db.get(h_code.lower(), 111)
+        # 1. 경기 일정 및 상태 확인 로직
+        schedule = statsapi.schedule(start_date='2026-06-27', end_date='2026-06-28', team=h_id)
         
-        # 1. 데이터 추출
-        games = statsapi.schedule(date=prev_date, team=h_id)
-        if not games:
-            return 0.5, "### ⚠️ 오류\n해당 날짜에 팀 경기 정보가 없습니다."
+        if not schedule:
+            return 0.5, "### ⚠️ 상태 확인\n해당 기간에 예정된 경기가 없습니다."
+            
+        # 상태 확인 및 데이터 추출
+        game = schedule[0]
+        status = game['status']
+        if status == 'Postponed':
+            return 0.5, f"### ⚠️ 경기 상태: {status}\n경기가 연기되어 분석을 수행할 수 없습니다."
         
-        game_info = games[0]
-        
-        # 2. 분석 지표 계산 (안전 파싱 적용)
-        # 예시 데이터 처리
-        raw_stats = '{"avg": 0.310}' 
-        h_power = get_safe_stat(raw_stats, 'avg')
+        # 2. 보정 로직 (상태 확인 통과 시)
+        h_power = get_safe_stat('{"avg": 0.310}', 'avg')
         a_power = 0.280
-        
-        # 3. 보정 로직
         if h_absent: h_power *= 0.85
             
         final_prob = h_power / (h_power + a_power)
-        report = f"### 📝 종합 분석 리포트 ({prev_date})\n- 📊 **승리 확률:** {final_prob:.1%}\n- 📉 **상태:** 데이터 파싱 및 검증 완료"
+        report = f"### 📝 종합 분석 리포트\n- 📅 **경기 날짜:** {game['game_date']}\n- 📊 **승리 확률:** {final_prob:.1%}\n- ✅ **상태:** {status}"
         
     except Exception as e:
         final_prob = 0.5
@@ -60,7 +48,7 @@ st.set_page_config(page_title="MLB AI Analyst", layout="centered")
 st.title("⚾ MLB AI 분석 시스템")
 
 col_top1, col_top2 = st.columns(2)
-target_date = col_top1.date_input("분석 날짜", datetime.now() - timedelta(days=1))
+target_date = col_top1.date_input("분석 날짜", datetime(2026, 6, 27))
 days_range = col_top2.slider("분석 범위 (최근 N일)", 1, 30, 7)
 
 tab1, tab2 = st.tabs(["⚡ 자동 실시간 분석", "🔍 수동 정밀 분석"])
