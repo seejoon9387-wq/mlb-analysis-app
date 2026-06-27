@@ -1,11 +1,20 @@
 import streamlit as st
+import statsapi
 
 st.title("⚾ MLB 승부 예측 분석기")
-st.write("환영합니다! 이제 곧 우리만의 분석 시스템이 여기에 나타날 거예요.")
 
-team1 = st.text_input("우리 팀(홈)", "Boston Red Sox")
-team2 = st.text_input("상대 팀(원정)", "New York Yankees")
+# 팀 선택
+team_name = st.selectbox("분석할 팀을 선택하세요", ["Boston Red Sox", "New York Yankees"])
 
-if st.button("분석 실행"):
-    st.write(f"분석 중: {team1} vs {team2}")
-    st.success("데이터 엔진을 곧 이곳에 연결할 예정입니다!")
+if st.button("데이터 불러오기"):
+    try:
+        # 오늘 날짜로 데이터 가져오기
+        schedule = statsapi.schedule(date='2026-06-28', team=team_name)
+        if not schedule:
+            st.warning("오늘 예정된 경기가 없습니다.")
+        else:
+            game_id = schedule[0]['game_id']
+            st.success(f"데이터 연결 성공! (Game ID: {game_id})")
+            st.write("이제 분석 엔진을 이식할 준비가 되었습니다.")
+    except Exception as e:
+        st.error(f"오류가 발생했습니다: {e}")
