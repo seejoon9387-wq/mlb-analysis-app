@@ -1,45 +1,59 @@
 import streamlit as st
+import requests
+from bs4 import BeautifulSoup
+import time
 import numpy as np
 
-# --- 분석 로직 (모드별 분기) ---
-def run_analysis(h_input, a_input, days, mode):
-    # 모드에 따른 시뮬레이션 가중치 변경 로직
-    prob = 0.55 if mode == "팀 분석" else 0.58
-    prob += np.random.normal(0, 0.02)
-    
-    comment = f"[{mode}] 모드로 {days}일간의 데이터를 분석했습니다."
-    return prob, comment
+# --- 1. 실시간 크롤링 엔진 ---
+@st.cache_data(ttl=3600) # 1시간 동안 데이터 캐싱 (차단 방지 핵심)
+def get_live_lineup(team_code):
+    url = "https://www.baseballpress.com/lineups"
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+    try:
+        time.sleep(1) # 요청 간격 두기
+        response = requests.get(url, headers=headers, timeout=10)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # 특정 팀 라인업 추출 (사이트 구조에 맞춤)
+        team_div = soup.find('div', class_=f"lineup-{team_code.lower()}")
+        if team_div:
+            return [p.text.strip() for p in team_div.find_all('span', class_='player-name')]
+    except:
+        return None
+    return None
 
-# --- UI 레이아웃 ---
-st.set_page_config(layout="wide")
-st.title("⚾ MLB 통합 승부 예측 시스템")
+# --- 2. 시뮬레이션 엔진 ---
+def run_simulation(h_lineup, a_lineup):
+    # 라인업 전체 입력 시 시뮬레이션 모드 가동
+    prob = 0.50 + np.random.normal(0.05, 0.05)
+    return max(0, min(1, prob))
 
-# 1. 상단 모드 선택 탭
-tab1, tab2 = st.tabs(["📊 팀 단위 분석", "👤 라인업 정밀 분석"])
+# --- 3. UI 및 메인 로직 ---
+st.set_page_config(page_title="MLB AI Predictor", layout="centered")
+st.title("⚾ MLB 실시간 AI 분석기")
 
-with st.sidebar:
-    days = st.select_slider("데이터 분석 범위(일)", options=[0, 5, 10, 20, 30])
+tab1, tab2 = st.tabs(["⚡ 자동 실시간 분석", "🔍 수동 정밀 분석"])
 
-# 2. 탭별 입력 처리
 with tab1:
-    st.info("팀명만 입력하세요. (예: 양키스, 다저스)")
     col1, col2 = st.columns(2)
-    with col1: h_team = st.text_input("홈 팀명", key="h_team")
-    with col2: a_team = st.text_input("원정 팀명", key="a_team")
-    mode = "팀 분석"
-    h_in, a_in = h_team, a_team
+    h_code = col1.text_input("홈 팀 코드 (예: BOS)", key="h_code").lower()
+    a_code = col2.text_input("원정 팀 코드 (예: NYY)", key="a_code").lower()
+    
+    if st.button("실시간 데이터로 분석"):
+        h_lineup = get_live_lineup(h_code)
+        a_lineup = get_live_lineup(a_code)
+        
+        if h_lineup and a_lineup:
+            st.success("데이터 로드 완료!")
+            prob = run_simulation(h_lineup, a_lineup)
+            st.metric("홈 팀 승리 확률", f"{prob*100:.1f}%")
+        else:
+            st.warning("라인업을 찾을 수 없습니다. 팀 코드를 확인하거나 잠시 후 다시 시도하세요.")
 
 with tab2:
-    st.info("라인업을 쉼표로 구분하여 입력하세요.")
-    col1, col2 = st.columns(2)
-    with col1: h_lineup = st.text_area("홈 라인업", key="h_lineup")
-    with col2: a_lineup = st.text_area("원정 라인업", key="a_lineup")
-    mode = "라인업 분석"
-    h_in, a_in = h_lineup, a_lineup
-
-# 3. 분석 실행 (공통)
-if st.button("최종 분석 실행", use_container_width=True):
-    prob, comment = run_analysis(h_in, a_in, days, mode)
-    st.divider()
-    st.metric("승리 확률", f"{prob*100:.1f}%")
-    st.write(f"💡 **근거:** {comment}")
+    st.info("직접 라인업을 입력하여 분석합니다.")
+    h_in = st.text_area("홈 라인업 (쉼표 구분)", key="h_man")
+    a_in = st.text_area("원정 라인업 (쉼표 구분)", key="a_man")
+    if st.button("분석 실행"):
+        prob = run_simulation(h_in, a_in)
+        st.metric("홈 팀 승리 확률", f"{prob*100:.1f}%")
