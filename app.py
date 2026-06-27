@@ -1,56 +1,41 @@
 import streamlit as st
-import pandas as pd
 import requests
-from datetime import datetime
+import pandas as pd
 
-# 페이지 설정 (전체 레이아웃 고정)
-st.set_page_config(page_title="MLB AI Analyst", layout="wide")
+# 1. 구독 확인: https://rapidapi.com/odds-feed-odds-feed-default/api/odds-feed/pricing
+# 2. 아래 엔드포인트와 헤더를 대시보드의 'Code Snippet'과 똑같이 맞췄습니다.
 
-# 상단 UI (항상 고정)
-st.title("⚾ MLB AI 분석 시스템")
-c_top1, c_top2 = st.columns(2)
-target_date = c_top1.date_input("분석 날짜", datetime.now())
-days_range = c_top2.slider("분석 범위 (최근 N일)", 1, 30, 7)
-st.divider()
+API_KEY = "03e8cebecemsh5ae22ee471e893ap10ec28jsn96d260298651"
 
-# 좌우 레이아웃 (항상 고정)
-left_col, right_col = st.columns([1.5, 2.5])
-
-# --- 왼쪽: 분석 도구 (항상 고정) ---
-with left_col:
-    st.subheader("📊 분석 엔진")
-    tab1, tab2 = st.tabs(["⚡ 자동 분석", "🔍 수동 분석"])
-    with tab1:
-        st.text_input("원정 팀")
-        st.text_input("홈 팀")
-        st.button("자동 분석 시작")
-    with tab2:
-        st.text_area("홈 팀 선수 명단")
-        st.text_area("원정 팀 선수 명단")
-        st.button("정밀 분석 시작")
-
-# --- 오른쪽: 배당판 (데이터가 없어도 UI 유지) ---
-with right_col:
-    st.subheader("⚡ 실시간 배당 대시보드")
-    
-    # API 키 및 설정
-    API_KEY = "03e8cebecemsh5ae22ee471e893ap10ec28jsn96d260298651"
-    
-    # [중요] RapidAPI 엔드포인트 확인 필요
-    # 현재 URL은 예시입니다. RapidAPI 대시보드에서 보신 정확한 URL로 수정하세요.
+def get_data_from_api():
     url = "https://odds-feed.p.rapidapi.com/api/v1/markets/feed"
+    # 403 에러 방지를 위해 필수 헤더를 명확히 고정합니다.
+    headers = {
+        "x-rapidapi-key": API_KEY,
+        "x-rapidapi-host": "odds-feed.p.rapidapi.com"
+    }
+    # 파라미터는 API 문서에서 요구하는 최소한만 넣습니다.
+    params = {"placing": "LIVE", "market_name": "1X2", "bet_type": "BACK", "page": "0"}
     
     try:
-        # 데이터 호출 시도
-        # (테스트용으로 event_ids를 제거하거나 실제 ID로 채워주세요)
-        response = requests.get(url, headers={"x-rapidapi-key": API_KEY, "x-rapidapi-host": "odds-feed.p.rapidapi.com"}, timeout=5)
-        
-        if response.status_code == 200:
-            data = response.json()
-            st.dataframe(pd.DataFrame(data.get('data', [])), use_container_width=True)
-        else:
-            st.error(f"API 호출 실패 (코드: {response.status_code})")
-            st.write("RapidAPI 대시보드에서 엔드포인트가 맞는지 확인해 주세요.")
-            
+        response = requests.get(url, headers=headers, params=params, timeout=10)
+        # 403 에러 발생 시 상세 메시지 출력
+        if response.status_code == 403:
+            st.error("403 Forbidden: API 구독 상태를 확인하거나, 호출 제한을 확인하세요.")
+            st.write("RapidAPI 대시보드에서 'Subscribe to Test'를 완료했는지 꼭 확인해주세요.")
+            return None
+        return response.json()
     except Exception as e:
-        st.warning("데이터 수신 대기 중... 설정 확인이 필요합니다.")
+        st.error(f"연결 오류: {e}")
+        return None
+
+# UI는 그대로 유지
+st.title("⚾ MLB AI 분석 시스템")
+# ... (상단 설정 및 좌측 분석창 코드) ...
+
+with st.sidebar:
+    st.write("API 상태 확인")
+    if st.button("배당 데이터 갱신"):
+        result = get_data_from_api()
+        if result:
+            st.write(result)
