@@ -3,72 +3,59 @@ import pandas as pd
 import numpy as np
 import os
 import matplotlib.pyplot as plt
-import datetime
 
-# --- 1. 데이터 처리 엔진 ---
+# --- 1. 데이터 처리 및 선수 스탯 조회 ---
 @st.cache_data
 def get_processed_data():
     file_path = 'full_mlb_events_2026.csv'
     if not os.path.exists(file_path): return None
     df = pd.read_csv(file_path)
-    df['game_date'] = pd.to_datetime(df['game_date'])
-    # 필요한 컬럼 정리
-    for col in ['release_speed', 'launch_speed', 'is_whiff']:
-        if col in df.columns: df[col] = df[col].fillna(0)
     return df
 
-# --- 2. 상성 추적 시뮬레이션 엔진 ---
-def run_matchup_stats(team, pitcher, selected_date, days):
-    df = get_processed_data()
+def get_player_stats(player_name, df):
+    # 선수별 평균 타구 속도를 전력 지수로 사용
+    player_data = df[df['batter'] == player_name]
+    return player_data['launch_speed'].mean() if not player_data.empty else 88.0
+
+# --- 2. 라인업 분석 엔진 ---
+def analyze_custom_lineup(team_name, lineup, pitcher, df):
+    # 선수별 스탯 매핑 및 평균 전력 점수 산출
+    scores = [get_player_stats(p, df) for p in lineup]
+    avg_power = sum(scores) / len(scores) if scores else 0
     
-    # 1. 기간 필터링
-    if days > 0:
-        target_date = pd.to_datetime(selected_date)
-        df = df[(df['game_date'] <= target_date) & (df['game_date'] >= target_date - pd.Timedelta(days=days))]
+    # 투수 억제력 반영 (특정 투수 대상 상성)
+    pitcher_data = df[df['pitcher'] == pitcher]
+    whiff_vs_pitcher = pitcher_data['is_whiff'].mean() if 'is_whiff' in pitcher_data.columns else 0.2
     
-    # 2. 핵심 로직: [해당 팀]이 [해당 투수]를 상대했을 때의 데이터만 추출
-    matchup_df = df[(df['batter_team'] == team) & (df['pitcher'] == pitcher)]
-    
-    if matchup_df.empty:
-        return None # 데이터 없음
-        
-    # 상성 통계 산출
-    stats = {
-        'avg_launch_speed': matchup_df['launch_speed'].mean(),
-        'whiff_rate_vs_pitcher': matchup_df['is_whiff'].mean()
-    }
-    return stats
+    # 최종 매치업 점수: 타선 전력 - (투수 억제력 보정)
+    final_score = avg_power - (whiff_vs_pitcher * 50)
+    return final_score
 
 # --- 3. 프론트엔드 ---
-st.title("⚾ 팀 vs 특정 선발 상성 분석기")
+st.title("⚾ 라인업 기반 매치업 시뮬레이터")
+
+df = get_processed_data()
 
 col1, col2 = st.columns(2)
 with col1:
-    h_team = st.text_input("홈 팀명")
-    a_pitcher = st.text_input("원정 선발 투수명")
+    team_name = st.text_input("팀명 (예: Boston Red Sox)")
+    lineup_input = st.text_area("라인업 입력 (쉼표로 구분)", "Rafael Devers, Triston Casas, Jarren Duran")
 with col2:
-    a_team = st.text_input("원정 팀명")
-    h_pitcher = st.text_input("홈 선발 투수명")
+    opp_pitcher = st.text_input("상대 선발 투수명")
 
-selected_date = st.date_input("경기 날짜", datetime.date(2026, 6, 27))
-days = st.select_slider("데이터 추적 기간 (0은 전체)", options=[0, 5, 10, 20])
-
-if st.button("상성 분석 실행"):
-    with st.spinner("과거 기록을 추적하여 상성 데이터를 추출 중..."):
-        # 양쪽의 상성 데이터 추출
-        home_vs_away_p = run_matchup_stats(h_team, a_pitcher, selected_date, days)
-        away_vs_home_p = run_matchup_stats(a_team, h_pitcher, selected_date, days)
-        
-        if home_vs_away_p and away_vs_home_p:
-            st.subheader("📊 상성 매치업 결과")
-            # 간단한 점수 산출
-            home_score = (home_vs_away_p['avg_launch_speed'] * 0.5) - (home_vs_away_p['whiff_rate_vs_pitcher'] * 50)
-            away_score = (away_vs_home_p['avg_launch_speed'] * 0.5) - (away_vs_home_p['whiff_rate_vs_pitcher'] * 50)
-            
-            prob = home_score / (home_score + away_score)
-            st.metric(f"{h_team}의 {a_pitcher} 공략 확률", f"{prob*100:.2f}%")
-            
-            st.write(f"📈 {h_team} vs {a_pitcher} 평균 타구 속도: {home_vs_away_p['avg_launch_speed']:.2f} mph")
-            st.write(f"📉 {h_team} vs {a_pitcher} 헛스윙률: {home_vs_away_p['whiff_rate_vs_pitcher']:.2%}")
-        else:
-            st.warning("선택한 기간 동안 해당 팀과 투수의 맞대결 기록이 없습니다.")
+if st.button("라인업 분석 실행"):
+    lineup = [p.strip() for p in lineup_input.split(',')]
+    score = analyze_custom_lineup(team_name, lineup, opp_pitcher, df)
+    
+    st.subheader(f"📊 {team_name}의 {opp_pitcher} 공략 예상 점수: {score:.2f}")
+    
+    st.write("### 분석 상세:")
+    st.info(f"- 참여 선수 수: {len(lineup)}명")
+    st.write(f"- 상대 투수 헛스윙 유도율(최근): {df[df['pitcher']==opp_pitcher]['is_whiff'].mean():.2%}")
+    
+    # 시각화: 예상 라인업 전력 분포
+    fig, ax = plt.subplots()
+    ax.bar(lineup, [get_player_stats(p, df) for p in lineup], color='skyblue')
+    plt.xticks(rotation=45)
+    plt.ylabel("평균 타구 속도 (mph)")
+    st.pyplot(fig)
