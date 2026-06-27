@@ -3,3 +3,6 @@ pandas
 requests
 mlb-statsapi
 pybaseball
+selenium
+scikit-learn
+plotly
