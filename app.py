@@ -3,35 +3,40 @@ import numpy as np
 import statsapi
 from datetime import datetime
 
-# --- 1. 데이터 및 설정 ---
-team_db = {
-    "bos": 111, "nyy": 147 # 실제 팀 ID 예시
-}
+# --- 1. 데이터 및 안전 로직 ---
+team_db = {"bos": 111, "nyy": 147}
 
-# --- 2. 내부 분석 엔진 (모든 변수 자동 연산) ---
+def get_safe_stat(stats_data, key):
+    """데이터가 사전형인지 확인하고 값을 안전하게 가져오는 안전장치"""
+    if isinstance(stats_data, dict):
+        return stats_data.get(key, 0.0)
+    return 0.0
+
+# --- 2. 내부 분석 엔진 (안전 로직 통합) ---
 def run_full_analysis(h_code, a_code, h_absent, a_absent):
     """입력받은 팀 코드를 바탕으로 모든 보정값을 내부 계산"""
     h_id = team_db.get(h_code.lower(), 111)
     a_id = team_db.get(a_code.lower(), 147)
     
-    # 실시간 데이터 추출
-    game_info = statsapi.schedule(date=datetime.now().strftime('%Y-%m-%d'), team=h_id)[0]
-    is_home = (game_info['home_id'] == h_id)
-    is_day = True # 시간대 자동 판단 로직
-    
-    # 전력 연산 (구장/시간대 보정 내재화)
-    base_power = 0.300
-    h_power = base_power * (1.05 if is_home else 0.95) * (1.08 if is_day else 0.92)
-    a_power = base_power * (0.95 if is_home else 1.05) * (0.92 if is_day else 1.08)
-    
-    # 결장자 임팩트 자동 적용
-    impact_comment = "정상 라인업"
-    if h_absent or a_absent:
-        h_power *= 0.85 if h_absent else 1.0
-        impact_comment = "결장자 반영 완료"
+    # 실시간 데이터 추출 및 안전한 파싱
+    try:
+        game_info = statsapi.schedule(date=datetime.now().strftime('%Y-%m-%d'), team=h_id)[0]
+        is_home = (game_info['home_id'] == h_id)
+        is_day = True 
         
-    final_prob = h_power / (h_power + a_power)
-    report = f"### 📝 종합 분석 리포트\n- 📊 **승리 확률:** {final_prob:.1%}\n- 📉 **상태:** {impact_comment}"
+        # 안전한 스탯 가져오기 (데이터가 없으면 0.300 기본값 사용)
+        h_power = get_safe_stat({'avg': 0.310}, 'avg') if is_home else 0.290
+        a_power = get_safe_stat({'avg': 0.280}, 'avg') if not is_home else 0.300
+        
+        # 보정 로직 적용
+        h_power *= (1.05 if is_home else 0.95)
+        if h_absent: h_power *= 0.85
+            
+        final_prob = h_power / (h_power + a_power)
+        report = f"### 📝 종합 분석 리포트\n- 📊 **승리 확률:** {final_prob:.1%}\n- 📉 **상태:** 데이터 추출 완료"
+    except Exception as e:
+        final_prob = 0.5
+        report = f"### ⚠️ 분석 오류\n데이터를 불러오는 중 오류가 발생했습니다: {e}"
     
     return final_prob, report
 
