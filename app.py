@@ -3,8 +3,9 @@ import pandas as pd
 import numpy as np
 import os
 import matplotlib.pyplot as plt
+import datetime
 
-# --- 1. 백엔드: 공수 통합 분석 엔진 ---
+# --- 1. 백엔드: 데이터 로드 및 정제 엔진 ---
 @st.cache_data
 def get_processed_data():
     file_path = 'full_mlb_events_2026.csv'
@@ -20,23 +21,22 @@ def get_processed_data():
     df['launch_speed'] = df['launch_speed'].fillna(df['launch_speed'].mean())
     return df
 
-def run_balanced_simulation(home, away, iterations=100000):
+# --- 2. 시뮬레이션 엔진 (날짜 및 가중치 반영) ---
+def run_balanced_simulation(home, away, selected_date, iterations=100000):
     df = get_processed_data()
-    recent_df = df[df['game_date'] >= df['game_date'].max() - pd.Timedelta(days=10)]
+    # 선택된 날짜 기준 10일 전까지의 데이터로 필터링
+    target_date = pd.to_datetime(selected_date)
+    recent_df = df[(df['game_date'] <= target_date) & (df['game_date'] >= target_date - pd.Timedelta(days=10))]
     
-    # 팀별 지표 그룹화
     stats = recent_df.groupby('batter_team').agg({'launch_speed': 'mean', 'is_whiff': 'mean'})
     
-    # 공수 지수 계산 (투수 헛스윙은 높을수록 좋고, 상대 타자 타구 속도는 낮을수록 좋음)
-    # Power Index = (우리 팀 타구 속도) - (우리 팀 투수 헛스윙률 * 100)
-    # 간단한 공수 밸런스 모델 적용
-    h_launch = stats.loc[home, 'launch_speed'] if home in stats.index else 90
-    h_whiff = stats.loc[home, 'is_whiff'] if home in stats.index else 0.25
-    a_launch = stats.loc[away, 'launch_speed'] if away in stats.index else 90
-    a_whiff = stats.loc[away, 'is_whiff'] if away in stats.index else 0.25
-    
-    home_score = (h_launch * 0.4) + (h_whiff * 60) # 타격 40% + 투구 60% 가중치
-    away_score = (a_launch * 0.4) + (a_whiff * 60)
+    def get_score(team):
+        launch = stats.loc[team, 'launch_speed'] if team in stats.index else 90
+        whiff = stats.loc[team, 'is_whiff'] if team in stats.index else 0.25
+        return (launch * 0.5) + (whiff * 100 * 0.5)
+
+    home_score = get_score(home)
+    away_score = get_score(away)
     
     home_sim = np.random.normal(home_score, 5, iterations)
     away_sim = np.random.normal(away_score, 5, iterations)
@@ -44,28 +44,28 @@ def run_balanced_simulation(home, away, iterations=100000):
     prob = np.mean(home_sim > away_sim)
     return prob, home_sim, away_sim
 
-# --- 2. 프론트엔드: 메인 UI ---
-st.title("⚾ 공수 밸런스 기반 MLB 승부 예측기")
+# --- 3. 프론트엔드: 메인 UI ---
+st.title("⚾ MLB 승부 예측 분석기 (통합 완성형)")
 
+# [누적 복구] 날짜 선택창 추가
+selected_date = st.date_input("경기 날짜 선택", datetime.date(2026, 6, 27))
 home_team = st.text_input("홈 팀 (예: BOS)")
 away_team = st.text_input("원정 팀 (예: NYY)")
 
-if st.button("종합 분석 실행"):
-    with st.spinner("공격력과 투구 지표를 종합 분석 중..."):
+if st.button("최종 분석 실행"):
+    with st.spinner("데이터 분석 및 시뮬레이션 중..."):
         try:
-            prob, h_sim, a_sim = run_balanced_simulation(home_team, away_team)
+            prob, h_sim, a_sim = run_balanced_simulation(home_team, away_team, selected_date)
             
-            st.subheader("📊 종합 분석 결과")
-            col1, col2 = st.columns(2)
-            col1.metric("홈 팀 승리 확률", f"{prob*100:.2f}%")
-            col2.metric("원정 팀 승리 확률", f"{(1-prob)*100:.2f}%")
+            st.subheader("📊 최종 보정된 승리 확률")
+            st.metric(f"{home_team} 승리 확률", f"{prob*100:.2f}%")
             
-            st.subheader("📊 전력 밸런스 분포")
+            st.subheader("📊 전력 분포도")
             fig, ax = plt.subplots()
-            ax.hist(h_sim, bins=50, alpha=0.6, label=f"{home_team} (Balanced)")
-            ax.hist(a_sim, bins=50, alpha=0.6, label=f"{away_team} (Balanced)")
+            ax.hist(h_sim, bins=50, alpha=0.5, label=f"{home_team}")
+            ax.hist(a_sim, bins=50, alpha=0.5, label=f"{away_team}")
             ax.legend()
             st.pyplot(fig)
             
         except Exception as e:
-            st.error("분석 실패: 팀 데이터가 부족합니다.")
+            st.error(f"분석 중 오류 발생: {e}. 팀 이름이나 데이터 기간을 확인하세요.")
