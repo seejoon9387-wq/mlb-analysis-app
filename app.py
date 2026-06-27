@@ -5,79 +5,57 @@ import os
 import matplotlib.pyplot as plt
 import datetime
 
-# --- 1. 유틸리티 ---
-def get_team_id_by_name(input_name):
-    team_db = {
-        '볼티': 'BAL', '양키스': 'NYY', '보스턴': 'BOS', '다저스': 'LAD', '메츠': 'NYM',
-        '필리스': 'PHI', '컵스': 'CHC', '화이트삭스': 'CWS', '클리블랜드': 'CLE', '휴스턴': 'HOU'
-    }
-    return team_db.get(input_name, input_name)
-
-# --- 2. 데이터 처리 엔진 ---
+# --- 1. 백엔드: 데이터 및 환경 변수 반영 엔진 ---
 @st.cache_data
 def get_processed_data():
     file_path = 'full_mlb_events_2026.csv'
     if not os.path.exists(file_path): return None
     df = pd.read_csv(file_path)
     df['game_date'] = pd.to_datetime(df['game_date'])
-    df['is_strikeout'] = df['events'].apply(lambda x: 1 if x == 'strikeout' else 0)
-    for col in ['release_speed', 'launch_speed', 'is_whiff', 'is_strikeout']:
-        if col in df.columns: df[col] = df[col].fillna(0)
+    # 환경 데이터 보정 (데이터셋에 컬럼이 있다고 가정)
+    # df['is_night'] = (df['game_time'] >= 18).astype(int)
     return df
 
-# --- 3. 시뮬레이션 엔진 ---
-def run_simulation(mode, target_a, target_b, selected_date, days, iterations=100000):
-    df = get_processed_data()
-    target_date = pd.to_datetime(selected_date)
-    
-    # 데이터 필터링 (기간)
-    if days > 0:
-        df = df[(df['game_date'] <= target_date) & (df['game_date'] >= target_date - pd.Timedelta(days=days))]
-    
-    # 모드별 그룹화 (팀 vs 투수)
-    group_col = 'pitcher_team' if mode == "팀 단위" else 'pitcher'
-    stats = df.groupby(group_col).agg({'release_speed': 'mean', 'is_strikeout': 'mean', 'is_whiff': 'mean'})
-    
-    def get_score(name):
-        s = stats.loc[name] if name in stats.index else pd.Series({'release_speed': 90, 'is_strikeout': 0.2, 'is_whiff': 0.2})
-        return (s['release_speed'] * 0.3) + (s['is_strikeout'] * 100 * 0.4) + (s['is_whiff'] * 100 * 0.3)
+def run_contextual_simulation(h_data, a_data, weather, time_of_day, iterations=100000):
+    # 환경 변수 가중치 설정
+    weather_factor = 1.05 if weather == "맑음" else 0.95
+    time_factor = 1.03 if time_of_day == "야간" else 1.00
+    home_field_advantage = 1.04 # 홈 이점
 
-    score_a, score_b = get_score(target_a), get_score(target_b)
-    sim_a = np.random.normal(score_a, 3, iterations)
-    sim_b = np.random.normal(score_b, 3, iterations)
+    # 점수 계산 시 환경 변수 반영
+    score_home = h_data * home_field_advantage * weather_factor
+    score_away = a_data * time_factor
     
-    prob = np.mean(sim_a > sim_b)
-    return prob, sim_a, sim_b
+    sim_home = np.random.normal(score_home, 2, iterations)
+    sim_away = np.random.normal(score_away, 2, iterations)
+    
+    prob = np.mean(sim_home > sim_away)
+    return prob, sim_home, sim_away
 
-# --- 4. 프론트엔드 ---
-st.title("⚾ MLB 맞춤형 승부 예측 분석기")
+# --- 2. 프론트엔드 ---
+st.title("⚾ MLB 종합 환경 변수 예측기")
 
-# 모드 선택
-mode = st.radio("분석 기준 선택", ["팀 단위", "투수 단위"], horizontal=True)
+# 환경 변수 입력 UI
+with st.expander("경기 환경 설정"):
+    weather = st.selectbox("날씨", ["맑음", "흐림", "비/바람"])
+    time_of_day = st.selectbox("경기 시간", ["주간", "야간"])
+    st.info("홈 팀은 4%의 필드 어드밴티지가 자동으로 적용됩니다.")
 
 col1, col2 = st.columns(2)
-with col1: selected_date = st.date_input("경기 날짜", datetime.date(2026, 6, 27))
-with col2: days = st.select_slider("데이터 범위 (일, 0은 전체)", options=[0, 5, 10, 20])
-
-if mode == "팀 단위":
-    input_a = st.text_input("홈 팀명")
-    input_b = st.text_input("원정 팀명")
-    # 팀 ID 매핑
-    target_a, target_b = get_team_id_by_name(input_a), get_team_id_by_name(input_b)
-else:
-    target_a = st.text_input("홈 선발 투수 이름")
-    target_b = st.text_input("원정 선발 투수 이름")
+with col1:
+    h_team = st.text_input("홈 팀")
+    h_val = st.number_input("홈 팀 전력 지수", value=50.0)
+with col2:
+    a_team = st.text_input("원정 팀")
+    a_val = st.number_input("원정 팀 전력 지수", value=50.0)
 
 if st.button("분석 실행"):
-    with st.spinner("데이터 분석 중..."):
-        try:
-            prob, h_sim, a_sim = run_simulation(mode, target_a, target_b, selected_date, days)
-            st.subheader(f"📊 {target_a} 승리 확률: {prob*100:.2f}%")
-            
-            fig, ax = plt.subplots()
-            ax.hist(h_sim, bins=50, alpha=0.5, label=target_a)
-            ax.hist(a_sim, bins=50, alpha=0.5, label=target_b)
-            ax.legend()
-            st.pyplot(fig)
-        except Exception as e:
-            st.error(f"데이터를 찾을 수 없습니다: {e}")
+    prob, h_sim, a_sim = run_contextual_simulation(h_val, a_val, weather, time_of_day)
+    
+    st.subheader(f"📊 최종 승리 확률: {prob*100:.2f}%")
+    
+    fig, ax = plt.subplots()
+    ax.hist(h_sim, bins=50, alpha=0.5, label=f"Home ({h_team})")
+    ax.hist(a_sim, bins=50, alpha=0.5, label=f"Away ({a_team})")
+    ax.legend()
+    st.pyplot(fig)
