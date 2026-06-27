@@ -3,3 +3,8 @@ requests
 pytz
 pybaseball
 pandas
+streamlit
+requests
+beautifulsoup4
+pandas
+numpy
