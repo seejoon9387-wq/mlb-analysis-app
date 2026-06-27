@@ -2,10 +2,9 @@ import streamlit as st
 import pandas as pd
 import requests
 
-st.set_page_config(layout="wide")
-st.title("⚾ MLB 데이터 강제 분해기")
+st.title("⚾ MLB 투타 상세 전적 (OPS 분석)")
 
-if st.button("데이터 구조 완벽 분해"):
+if st.button("통계 데이터 정리하기"):
     API_KEY = "03e8cebecemsh5ae22ee471e893ap10ec28jsn96d260298651"
     url = "https://tank01-mlb-live-in-game-real-time-statistics.p.rapidapi.com/getMLBBatterVsPitcher"
     params = {"playerID": "592450"}
@@ -13,19 +12,22 @@ if st.button("데이터 구조 완벽 분해"):
     
     response = requests.get(url, headers=headers, params=params)
     data = response.json().get('body', {})
-    opponents = data.get('opponents', [])
     
+    # 821개의 데이터를 가져와서 표로 변환
     all_data = []
-    for item in opponents:
-        if isinstance(item, list): all_data.extend(item)
-        else: all_data.append(item)
+    for key, value in data.get('opponents', {}).items():
+        if isinstance(value, list): all_data.extend(value)
     
-    # [핵심 변경사항]
-    # 단순히 DataFrame으로 만드는 대신, 중첩된 JSON을 쪼개는 작업 수행
     df = pd.json_normalize(all_data)
     
-    st.write("### 분해 완료된 데이터")
-    st.dataframe(df, use_container_width=True)
+    # 핵심 통계 항목만 골라내기 (데이터프레임에 실제 존재하는 컬럼명으로 수정 필요)
+    # 0, 1 같은 숫자가 아닌 실제 통계값이 적힌 컬럼명을 찾아야 합니다.
+    target_cols = ['batterName', 'pitcherName', 'H', 'AB', 'AVG', 'OPS', 'HR']
     
-    # 데이터가 어떻게 쪼개졌는지 확인용
-    st.write("추출된 컬럼들:", df.columns.tolist())
+    # 존재하는 컬럼만 골라서 표 생성
+    available_cols = [c for c in target_cols if c in df.columns]
+    
+    if available_cols:
+        st.dataframe(df[available_cols].sort_values(by='OPS', ascending=False), use_container_width=True)
+    else:
+        st.write("사용 가능한 컬럼 목록:", df.columns.tolist())
