@@ -28,20 +28,22 @@ def get_processed_data():
         if col in df.columns: df[col] = df[col].fillna(0)
     return df
 
-# --- 3. 고도화된 시뮬레이션 엔진 ---
+# --- 3. 고도화된 시뮬레이션 엔진 (전체 시즌 옵션 포함) ---
 def run_advanced_simulation(home, away, selected_date, days, iterations=100000):
     df = get_processed_data()
     home, away = get_team_id_by_name(home), get_team_id_by_name(away)
     
-    # 선택된 날짜와 데이터 범위 필터링
-    target_date = pd.to_datetime(selected_date)
-    recent_df = df[(df['game_date'] <= target_date) & (df['game_date'] >= target_date - pd.Timedelta(days=days))]
+    # [수정됨] days가 0이면 전체 데이터 사용, 아니면 날짜 기준 필터링
+    if days == 0:
+        recent_df = df
+    else:
+        target_date = pd.to_datetime(selected_date)
+        recent_df = df[(df['game_date'] <= target_date) & (df['game_date'] >= target_date - pd.Timedelta(days=days))]
     
     stats = recent_df.groupby('pitcher_team').agg({'release_speed': 'mean', 'is_strikeout': 'mean', 'is_whiff': 'mean'})
     
     def get_score(team):
         s = stats.loc[team] if team in stats.index else pd.Series({'release_speed': 90, 'is_strikeout': 0.2, 'is_whiff': 0.2})
-        # 투구 지표(70%) + 타격 지표(30% 가중치 시뮬레이션)
         return (s['release_speed'] * 0.3) + (s['is_strikeout'] * 100 * 0.4) + (s['is_whiff'] * 100 * 0.3)
 
     h_score, a_score = get_score(home), get_score(away)
@@ -53,17 +55,18 @@ def run_advanced_simulation(home, away, selected_date, days, iterations=100000):
     return prob, h_sim, a_sim
 
 # --- 4. 프론트엔드 UI ---
-st.title("⚾ MLB 종합 승부 예측 분석기")
+st.title("⚾ MLB 종합 승부 예측 분석기 (전체 시즌 포함)")
 
 col1, col2 = st.columns(2)
 with col1: selected_date = st.date_input("경기 날짜", datetime.date(2026, 6, 27))
-with col2: days = st.select_slider("최근 데이터 범위 (일)", options=[5, 10, 20])
+# [수정됨] 0을 추가하여 전체 시즌 보기 가능
+with col2: days = st.select_slider("데이터 범위 (일, 0은 전체 시즌)", options=[0, 5, 10, 20])
 
 home_input = st.text_input("홈 팀")
 away_input = st.text_input("원정 팀")
 
 if st.button("최종 분석 실행"):
-    with st.spinner("최근 투수 지표 및 데이터 종합 분석 중..."):
+    with st.spinner("데이터 분석 중..."):
         try:
             prob, h_sim, a_sim = run_advanced_simulation(home_input, away_input, selected_date, days)
             
@@ -76,4 +79,4 @@ if st.button("최종 분석 실행"):
             st.pyplot(fig)
             
         except Exception as e:
-            st.error(f"분석 중 오류 발생: {e}. 팀 이름을 다시 확인해 주세요.")
+            st.error(f"분석 중 오류 발생: {e}. 팀 이름을 확인하세요.")
