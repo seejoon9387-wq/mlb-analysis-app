@@ -2,47 +2,52 @@ import streamlit as st
 import pandas as pd
 import requests
 
-# 페이지 구성
-st.set_page_config(layout="wide")
-st.title("⚾ MLB 상세 분석 시스템")
+# 1. 페이지 레이아웃 고정
+st.set_page_config(page_title="MLB AI", layout="wide")
 
-# [고정 레이아웃]
-col_left, col_right = st.columns([1, 3])
+# 2. 고정 헤더
+st.title("⚾ MLB 분석 대시보드")
+st.markdown("---")
 
-with col_left:
-    st.subheader("분석 도구")
-    player_id = st.text_input("선수 ID", value="592450")
-    btn_search = st.button("데이터 조회")
+# 3. 레이아웃 강제 분할 (사라지지 않음)
+col_a, col_b = st.columns([1, 2])
 
-with col_right:
-    st.subheader("데이터 대시보드")
+# 왼쪽 분석 엔진 영역
+with col_a:
+    st.subheader("분석 설정")
+    player_id = st.text_input("선수 ID 입력", "592450")
+    run_btn = st.button("분석 실행")
+
+# 오른쪽 배당 및 데이터 영역
+with col_b:
+    st.subheader("결과 출력")
     
-    if btn_search:
-        # API 호출 부분
+    if run_btn:
+        # 데이터 호출 로직
         API_KEY = "03e8cebecemsh5ae22ee471e893ap10ec28jsn96d260298651"
         HOST = "tank01-mlb-live-in-game-real-time-statistics.p.rapidapi.com"
         url = "https://tank01-mlb-live-in-game-real-time-statistics.p.rapidapi.com/getMLBBatterVsPitcher"
-        headers = {"x-rapidapi-key": API_KEY, "x-rapidapi-host": HOST}
-        params = {"playerID": player_id}
         
-        response = requests.get(url, headers=headers, params=params)
-        
-        if response.status_code == 200:
-            data = response.json().get('body', {})
-            opponents = data.get('opponents', {})
+        try:
+            response = requests.get(url, headers={"x-rapidapi-key": API_KEY, "x-rapidapi-host": HOST}, params={"playerID": player_id})
             
-            # [핵심] 쪼개진 opponents 데이터를 하나로 합치기
-            all_opponents = []
-            for key in opponents:
-                # 각 리스트 내의 항목들을 하나씩 추가
-                if isinstance(opponents[key], list):
-                    all_opponents.extend(opponents[key])
-            
-            if all_opponents:
-                df = pd.DataFrame(all_opponents)
-                st.dataframe(df, use_container_width=True)
-                st.success(f"선수 {player_id}에 대한 상대 전적 데이터를 성공적으로 불러왔습니다.")
+            if response.status_code == 200:
+                data = response.json()
+                # 데이터 구조 확인 및 파싱
+                opponents = data.get('body', {}).get('opponents', {})
+                if opponents:
+                    # 모든 데이터를 하나로 병합
+                    all_data = []
+                    for k in opponents:
+                        if isinstance(opponents[k], list): all_data.extend(opponents[k])
+                    
+                    df = pd.DataFrame(all_data)
+                    st.dataframe(df, use_container_width=True)
+                else:
+                    st.warning("데이터는 성공적으로 가져왔으나, 안에 담긴 'opponents' 내용이 비어있습니다.")
             else:
-                st.warning("상대 전적 데이터(opponents)가 비어있습니다.")
-        else:
-            st.error("데이터 호출 실패")
+                st.error(f"API 응답 실패: {response.status_code}")
+        except Exception as e:
+            st.error(f"오류 발생: {e}")
+    else:
+        st.info("선수 ID를 입력하고 '분석 실행' 버튼을 누르세요.")
