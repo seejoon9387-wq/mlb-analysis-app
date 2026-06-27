@@ -2,61 +2,44 @@ import streamlit as st
 import pandas as pd
 import requests
 
-# 페이지 레이아웃 고정
-st.set_page_config(page_title="MLB AI Analyst", layout="wide")
+# 페이지 구성
+st.set_page_config(layout="wide")
+st.title("⚾ MLB 데이터 디버깅 센터")
 
-# API 설정 (주신 정보 적용)
+# [API 설정]
 API_KEY = "03e8cebecemsh5ae22ee471e893ap10ec28jsn96d260298651"
 HOST = "tank01-mlb-live-in-game-real-time-statistics.p.rapidapi.com"
+HEADERS = {"x-rapidapi-key": API_KEY, "x-rapidapi-host": HOST, "Content-Type": "application/json"}
 
-# 헤더 설정
-HEADERS = {
-    "x-rapidapi-key": API_KEY,
-    "x-rapidapi-host": HOST,
-    "Content-Type": "application/json"
-}
-
-st.title("⚾ MLB AI 분석 시스템")
-
-# [상단 레이아웃] 항상 고정
-c1, c2 = st.columns(2)
-target_date = c1.date_input("분석 날짜")
-days_range = c2.slider("분석 범위", 1, 30, 7)
-st.divider()
-
-# [좌우 분할] 항상 고정
-col_left, col_right = st.columns([1.5, 2.5])
-
-with col_left:
-    st.subheader("📊 분석 엔진")
-    st.text_input("선수 ID (예: 592450)")
-    if st.button("선수 상세 분석"):
-        st.success("데이터 호출 중...")
-
-with col_right:
-    st.subheader("⚡ 실시간 데이터 대시보드")
+# [데이터 호출 함수]
+def fetch_debug_data():
+    url = "https://tank01-mlb-live-in-game-real-time-statistics.p.rapidapi.com/getMLBBatterVsPitcher"
+    params = {"playerID": "592450"} # 일단 고정 ID로 테스트
     
-    # 선수 상세 데이터 호출
-    def get_player_data(player_id="592450"):
-        url = "https://tank01-mlb-live-in-game-real-time-statistics.p.rapidapi.com/getMLBBatterVsPitcher"
-        params = {"playerID": player_id}
-        try:
-            response = requests.get(url, headers=HEADERS, params=params, timeout=10)
-            if response.status_code == 200:
-                data = response.json()
-                # 데이터가 존재할 경우 테이블로 변환
-                if 'body' in data:
-                    return pd.DataFrame([data['body']])
-                return None
-            else:
-                return f"에러: {response.status_code}"
-        except Exception as e:
-            return str(e)
+    try:
+        response = requests.get(url, headers=HEADERS, params=params, timeout=10)
+        if response.status_code == 200:
+            return response.json() # 결과 반환
+        else:
+            return f"에러코드: {response.status_code}"
+    except Exception as e:
+        return str(e)
 
-    result = get_player_data()
+# [UI 영역]
+st.subheader("데이터 수신 상태 확인")
+if st.button("데이터 강제 호출 및 확인"):
+    raw_data = fetch_debug_data()
     
-    if isinstance(result, pd.DataFrame):
-        st.dataframe(result, use_container_width=True)
-    else:
-        st.warning(f"데이터 상태: {result}")
-        st.info("데이터가 보이지 않는다면, RapidAPI 대시보드에서 해당 API를 구독했는지 다시 한번 확인해주세요.")
+    # 1. 원본 데이터 출력 (이게 보여야 뭐가 문제인지 압니다)
+    st.write("### 원본 응답 데이터:")
+    st.json(raw_data) 
+    
+    # 2. 데이터 구조 파싱 시도
+    try:
+        if isinstance(raw_data, dict) and 'body' in raw_data:
+            st.success("데이터 파싱 성공!")
+            st.dataframe(pd.DataFrame([raw_data['body']]))
+        else:
+            st.warning("데이터가 비어있거나 구조가 'body'를 포함하지 않습니다.")
+    except Exception as e:
+        st.error(f"파싱 오류: {e}")
