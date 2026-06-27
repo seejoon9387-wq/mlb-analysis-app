@@ -2,16 +2,6 @@ streamlit
 MLB-StatsAPI
 pandas
 requests
-
-streamlit
-MLB-StatsAPI
-pandas
-requests
-pytz
-
-streamlit
-MLB-StatsAPI
-pandas
-requests
 pytz
 pybaseball  <-- 추가하세요
+
