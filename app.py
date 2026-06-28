@@ -3,17 +3,21 @@ import pandas as pd
 import requests
 from datetime import datetime
 
-# 1. 데이터 병합을 위한 공통 키 함수
-def get_team_key(name):
-    # API 팀명과 CSV 팀명을 일치시키기 위한 정규화
-    mapping = {"Arizona Diamondbacks": "ARI", "Baltimore Orioles": "BAL", "New York Yankees": "NYY", "Boston Red Sox": "BOS", "Los Angeles Dodgers": "LAD", "San Francisco Giants": "SF", "Chicago Cubs": "CHC", "Texas Rangers": "TEX"}
-    return mapping.get(name, name)
-
 @st.cache_data
 def get_master_data():
     url = 'https://drive.google.com/uc?export=download&id=1ImEBCjIFN-0K0plfLaQvTcJhhEVHV6DY&confirm=t'
     df = pd.read_csv(url)
-    # CSV의 날짜 포맷을 'YYYY-MM-DD'로 표준화
+    
+    # 💡 [진단] 컬럼명을 확인하여 'date'로 간주할 항목을 찾습니다.
+    st.write("---")
+    st.write("현재 데이터셋 컬럼 확인:", list(df.columns))
+    
+    # 만약 'date'라는 컬럼이 없으면, 첫 번째 컬럼을 날짜로 간주하도록 보정
+    if 'date' not in df.columns:
+        # 첫 번째 컬럼을 'date'로 이름 변경 (가장 흔한 케이스)
+        df = df.rename(columns={df.columns[0]: 'date'})
+        st.warning(f"데이터에 'date' 컬럼이 없어 첫 번째 컬럼 '{df.columns[0]}'을 날짜로 지정했습니다.")
+    
     df['date'] = pd.to_datetime(df['date']).dt.strftime('%Y-%m-%d')
     return df
 
@@ -33,19 +37,20 @@ def get_live_schedule(target_date):
         return pd.DataFrame(data)
     except: return pd.DataFrame()
 
-# 2. 메인 로직: 날짜/팀 기준으로 데이터 매칭
-st.title("⚾ 날짜별 정밀 데이터 매칭 조회")
+# 메인 로직
+st.title("⚾ 데이터 매칭 조회")
 selected_date = st.date_input("날짜 선택:", datetime.now())
 
 if st.button("데이터 매칭 실행"):
-    target_date = selected_date.strftime('%Y-%m-%d')
-    live_df = get_live_schedule(target_date)
-    master_df = get_master_data()
-
-    if not live_df.empty:
-        # 데이터 병합 (날짜와 팀 이름이 같으면 데이터 붙이기)
-        merged = pd.merge(live_df, master_df, on=['date'], how='inner')
-        st.subheader(f"{target_date} 매칭 결과")
-        st.table(merged)
-    else:
-        st.warning("선택한 날짜에 일치하는 데이터가 없습니다.")
+    try:
+        master_df = get_master_data()
+        live_df = get_live_schedule(selected_date.strftime('%Y-%m-%d'))
+        
+        if not live_df.empty:
+            # 병합 시도
+            merged = pd.merge(live_df, master_df, on=['date'], how='inner')
+            st.table(merged)
+        else:
+            st.warning("선택한 날짜에 실시간 데이터가 없습니다.")
+    except Exception as e:
+        st.error(f"데이터 처리 중 에러 발생: {e}")
