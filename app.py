@@ -1,26 +1,25 @@
 import streamlit as st
 import pandas as pd
-import os
-
-@st.cache_data
-def load_data():
-    # 현재 스크립트 파일(app.py)이 있는 위치를 기준으로 경로 설정
-    file_path = os.path.join(os.path.dirname(__file__), "mlb_final_master.csv")
-    
-    # 파일이 존재하는지 확인
-    if not os.path.exists(file_path):
-        st.error(f"파일을 찾을 수 없습니다: {file_path}")
-        return pd.DataFrame() # 빈 데이터프레임 반환
-        
-    df = pd.read_csv(file_path)
-    df.columns = [c.strip().lower() for c in df.columns]
-    df['date'] = df['date'].astype(str)
-    return df
 
 st.title("⚾ MLB 경기 결과 분석")
-df = load_data()
 
-if not df.empty:
-    st.dataframe(df.head())
+# 사용자가 파일을 직접 올리게 함
+uploaded_file = st.file_uploader("mlb_final_master.csv 파일을 업로드하세요", type="csv")
+
+if uploaded_file is not None:
+    df = pd.read_csv(uploaded_file)
+    df.columns = [c.strip().lower() for c in df.columns]
+    df['date'] = df['date'].astype(str)
+    
+    # 달력 및 필터링
+    selected_date = st.date_input("조회할 날짜를 선택하세요:")
+    str_date = selected_date.strftime('%Y-%m-%d')
+    
+    match_data = df[df['date'] == str_date]
+    
+    if not match_data.empty:
+        st.dataframe(match_data, use_container_width=True)
+    else:
+        st.warning(f"{str_date} 데이터가 없습니다.")
 else:
-    st.write("데이터가 로드되지 않았습니다.")
+    st.info("파일을 업로드하면 분석이 시작됩니다.")
