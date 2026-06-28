@@ -6,26 +6,31 @@ from datetime import datetime, timedelta
 def get_master_data():
     url = 'https://drive.google.com/uc?export=download&id=1ImEBCjIFN-0K0plfLaQvTcJhhEVHV6DY&confirm=t'
     df = pd.read_csv(url)
-    # 데이터 내의 날짜 컬럼을 찾아서 datetime으로 변환 (사용자님 데이터의 날짜 컬럼명을 'date'로 통일)
-    # 만약 컬럼명이 다르다면 알려주세요!
-    df['date'] = pd.to_datetime(df.iloc[:, 0]) # 첫 번째 열이 날짜라고 가정
     return df
 
-st.title("⚾ 시차 보정형 경기 기록 조회")
+st.title("⚾ 데이터 날짜 자동 매칭 엔진")
+
 df = get_master_data()
 
-selected_date = st.date_input("조회할 날짜 선택:", datetime(2026, 6, 29))
+# 1. 사용자가 날짜 컬럼을 직접 선택하게 함 (에러 방지)
+st.write("데이터의 컬럼 목록:", list(df.columns))
+date_col = st.selectbox("날짜가 포함된 컬럼을 선택하세요:", df.columns)
 
-if st.button("데이터 조회 (시차 보정 포함)"):
-    target = pd.Timestamp(selected_date)
+# 2. 선택된 컬럼을 날짜 형식으로 변환
+try:
+    df['parsed_date'] = pd.to_datetime(df[date_col], errors='coerce')
+    df = df.dropna(subset=['parsed_date']) # 날짜 변환 실패한 행 제거
     
-    # 💡 [핵심] 선택한 날짜 당일 + 전날 데이터까지 모두 검색하여 매칭
-    # 미국 시간과 한국 시간 차이로 인한 하루 오차 해결
-    date_range = [target, target - timedelta(days=1)]
-    result = df[df['date'].dt.date.isin([d.date() for d in date_range])]
-    
-    if not result.empty:
-        st.success(f"{selected_date} 근접 데이터 발견 (시차 보정)")
-        st.table(result)
-    else:
-        st.warning("선택한 날짜 및 전날에도 일치하는 데이터가 없습니다.")
+    selected_date = st.date_input("조회할 날짜 선택:", datetime(2026, 6, 29))
+
+    if st.button("결과 조회"):
+        target = pd.Timestamp(selected_date)
+        # 당일 + 전날 (시차 보정)
+        res = df[df['parsed_date'].dt.date.isin([target.date(), (target - timedelta(days=1)).date()])]
+        
+        if not res.empty:
+            st.table(res)
+        else:
+            st.warning("해당 날짜에 일치하는 데이터가 없습니다.")
+except Exception as e:
+    st.error(f"날짜 변환 중 오류: {e}. 선택한 컬럼이 정말 날짜인가요?")
