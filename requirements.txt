@@ -1,3 +1,3 @@
-streamlit
-pybaseball
+python-statsapi
 pandas
+streamlit
