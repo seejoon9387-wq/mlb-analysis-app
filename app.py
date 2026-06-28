@@ -2,9 +2,9 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 
-# 1. 데이터 검증 및 팀 정밀 매핑 (1번 적용)
+# 1. 데이터 검증 및 필터링 엔진 (데이터 무결성 최우선 적용)
 @st.cache_data
-def get_verified_data():
+def get_verified_data(min_samples=100):
     data = pd.read_csv('full_mlb_events_2026.csv')
     
     # 팀 매핑
@@ -12,38 +12,35 @@ def get_verified_data():
     batter_map = data.groupby('batter')['batter_team'].agg(lambda x: x.mode()[0] if not x.mode().empty else 'Unknown')
     data['batter_2026_team'] = data['batter'].map(batter_map)
     
-    # 검증: 구단별 데이터 분포 확인
+    # 데이터 분포 확인
     dist = data['batter_2026_team'].value_counts()
-    return data, dist
+    
+    # 데이터가 부족한 팀 필터링 (신뢰도 보장)
+    reliable_teams = dist[dist >= min_samples].index
+    filtered_data = data[data['batter_2026_team'].isin(reliable_teams)]
+    
+    return filtered_data, dist, reliable_teams
 
-# 2. 통계적 전력 분석 (2번 적용)
-def analyze_team_power(df):
-    # 각 팀의 평균 타구 속도와 발사각을 통한 전력 산출
-    team_power = df.groupby('batter_2026_team').agg({
-        'launch_speed': 'mean',
-        'launch_angle': 'mean'
-    }).rename(columns={'launch_speed': 'Avg_Exit_Velocity', 'launch_angle': 'Avg_Launch_Angle'})
-    return team_power
-
-# 3. 메인 인터페이스
+# 2. 메인 인터페이스
 st.set_page_config(layout="wide")
-st.title("⚾ MLB AI 데이터 검증 및 전력 분석 v25.0")
+st.title("⚾ MLB AI 데이터 무결성 검증 시스템 v26.0")
 
-if st.sidebar.button("시스템 동기화 및 분석 수행"):
-    with st.spinner("데이터 무결성 검증 및 전력 산출 중..."):
-        df, dist = get_verified_data()
+if st.sidebar.button("데이터 검증 및 신뢰도 분석"):
+    with st.spinner("구단별 데이터 표본 검사 중..."):
+        df, dist, reliable = get_verified_data()
         
-        # 1) 데이터 분포 진단
-        st.subheader("📊 [단계 1] 데이터 무결성 진단")
-        st.bar_chart(dist)
+        st.subheader("📊 데이터 무결성 진단 리포트")
+        col1, col2 = st.columns(2)
         
-        # 2) 전력 분석 결과
-        st.subheader("📈 [단계 2] 팀별 전력 통계 분석")
-        power_df = analyze_team_power(df)
-        st.dataframe(power_df.sort_values('Avg_Exit_Velocity', ascending=False))
+        # 검증 통계 시각화
+        col1.write("구단별 데이터 수집 분포")
+        col1.bar_chart(dist)
         
-        st.success("시스템 정상: 데이터 검증이 완료된 팀을 대상으로 분석되었습니다.")
-
-
-
-st.caption("Engine Status: Data Integrity & Analytics Fully Integrated | v25.0")
+        # 신뢰도 평가
+        col2.write("분석 적합 구단 리스트 (표본 100건 이상)")
+        col2.dataframe(reliable)
+        
+        if len(reliable) < 30:
+            st.warning(f"⚠️ 경고: {30 - len(reliable)}개 구단의 데이터가 부족하여 분석의 편향이 발생할 수 있습니다.")
+        else:
+            st.success("✅ 모든 구단 데이터가 충분하여 정밀 분석이 가능합니다.")
