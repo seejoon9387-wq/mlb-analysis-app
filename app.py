@@ -2,72 +2,59 @@ import streamlit as st
 import pandas as pd
 import requests
 from datetime import datetime
-import pytz
 
-# 1. 팀 이름 정규화 딕셔너리 (최대한 광범위하게 작성)
+# 1. 팀 매핑 딕셔너리 (가장 정확한 버전)
 NAME_MAP = {
-    "Baltimore Orioles": "BAL", "Boston Red Sox": "BOS", "New York Yankees": "NYY",
-    "Toronto Blue Jays": "TOR", "Tampa Bay Rays": "TB", "Chicago White Sox": "CWS",
-    "Cleveland Guardians": "CLE", "Detroit Tigers": "DET", "Kansas City Royals": "KC",
-    "Minnesota Twins": "MIN", "Houston Astros": "HOU", "Los Angeles Angels": "LAA",
-    "Oakland Athletics": "OAK", "Seattle Mariners": "SEA", "Texas Rangers": "TEX",
-    "Atlanta Braves": "ATL", "Miami Marlins": "MIA", "New York Mets": "NYM",
-    "Philadelphia Phillies": "PHI", "Washington Nationals": "WSH", "Chicago Cubs": "CHC",
-    "Cincinnati Reds": "CIN", "Milwaukee Brewers": "MIL", "Pittsburgh Pirates": "PIT",
-    "St. Louis Cardinals": "STL", "Arizona Diamondbacks": "ARI", "Colorado Rockies": "COL",
-    "Los Angeles Dodgers": "LAD", "San Diego Padres": "SD", "San Francisco Giants": "SF"
+    "Arizona D'Backs": "ARI", "Arizona Diamondbacks": "ARI", "Athletics": "OAK",
+    "Atlanta Braves": "ATL", "Baltimore Orioles": "BAL", "Boston Red Sox": "BOS",
+    "Chicago Cubs": "CHC", "Chicago White Sox": "CWS", "Cincinnati Reds": "CIN",
+    "Cleveland Guardians": "CLE", "Colorado Rockies": "COL", "Detroit Tigers": "DET",
+    "Houston Astros": "HOU", "Kansas City Royals": "KC", "Los Angeles Angels": "LAA",
+    "Los Angeles Dodgers": "LAD", "Miami Marlins": "MIA", "Milwaukee Brewers": "MIL",
+    "Minnesota Twins": "MIN", "New York Mets": "NYM", "New York Yankees": "NYY",
+    "Oakland Athletics": "OAK", "Philadelphia Phillies": "PHI", "Pittsburgh Pirates": "PIT",
+    "San Diego Padres": "SD", "San Francisco Giants": "SF", "Seattle Mariners": "SEA",
+    "St. Louis Cardinals": "STL", "Tampa Bay Rays": "TB", "Texas Rangers": "TEX",
+    "Toronto Blue Jays": "TOR", "Washington Nationals": "WSH"
 }
 
-def normalize_team_name(name):
-    # 매핑되지 않는 경우를 대비해 원본 로그를 남기거나 유연하게 처리
-    return NAME_MAP.get(name, name)
-
+# 2. 데이터 처리 및 승률 계산 로직
 @st.cache_data
-def load_and_fix_data():
+def get_processed_data():
     url = 'https://drive.google.com/uc?export=download&id=1ImEBCjIFN-0K0plfLaQvTcJhhEVHV6DY&confirm=t'
     df = pd.read_csv(url)
-    
-    # 1. 원본 데이터의 팀 리스트를 확인 (진단용)
-    unique_db_teams = pd.concat([df['home_team'], df['away_team']]).unique()
-    
-    # 2. 팀 병합 및 정규화
-    df_home = df[['home_team', 'home_score']].rename(columns={'home_team': 'team', 'home_score': 'score'})
-    df_away = df[['away_team', 'away_score']].rename(columns={'away_team': 'team', 'away_score': 'score'})
-    df_combined = pd.concat([df_home, df_away])
-    df_combined['team'] = df_combined['team'].apply(lambda x: NAME_MAP.get(x, x))
-    
-    return df_combined, unique_db_teams
+    # 팀 이름 통일
+    df['h_team'] = df['home_team'].map(NAME_MAP)
+    df['a_team'] = df['away_team'].map(NAME_MAP)
+    return df
 
-@st.cache_data
-def get_mlb_schedule(target_date):
-    url = f"https://statsapi.mlb.com/api/v1/schedule/games/?sportId=1&date={target_date}&hydrate=probablePitcher,linescore"
-    try:
-        response = requests.get(url, timeout=10).json()
-        games = response['dates'][0]['games']
-        data = []
-        for g in games:
-            home_name = g['teams']['home']['team']['name']
-            away_name = g['teams']['away']['team']['name']
-            data.append({
-                "홈팀(원본)": home_name,
-                "원정팀(원본)": away_name,
-                "홈팀(매칭)": normalize_team_name(home_name),
-                "원정팀(매칭)": normalize_team_name(away_name)
-            })
-        return data
-    except: return []
+def calculate_win_prob(h_team, a_team, df):
+    # 해당 두 팀이 붙었던 과거 기록만 필터링
+    matchup = df[(df['h_team'] == h_team) & (df['a_team'] == a_team)]
+    if matchup.empty:
+        # 기록이 없으면 반대로도 검색
+        matchup = df[(df['h_team'] == a_team) & (df['a_team'] == h_team)]
+        if matchup.empty: return 50.0 # 진짜 기록 없으면 50%
+        # 반대 기록이면 승률 반전
+        avg_score = matchup['home_score'].mean() # 원래 원정팀의 홈 기록
+        return round(100 - (avg_score / (avg_score + matchup['away_score'].mean()) * 100), 1)
+    
+    # 홈팀 승률 계산
+    h_avg = matchup['home_score'].mean()
+    a_avg = matchup['away_score'].mean()
+    if (h_avg + a_avg) == 0: return 50.0
+    return round((h_avg / (h_avg + a_avg)) * 100, 1)
 
-# 3. 사이드바 및 진단 실행
-st.sidebar.subheader("매칭 진단 모드")
-if st.sidebar.button("매칭 전체 점검"):
-    master_df, db_teams = load_and_fix_data()
-    schedule = get_mlb_schedule(datetime.now().strftime('%Y-%m-%d'))
+# 3. 메인 화면
+st.title("⚾ MLB AI 정밀 분석기")
+if st.button("경기 데이터 매칭 및 분석 실행"):
+    master_df = get_processed_data()
+    schedule = get_mlb_schedule(datetime.now().strftime('%Y-%m-%d')) # 기존 함수 사용
     
-    st.subheader("진단 결과")
-    st.write("### 데이터베이스 내 팀 이름 목록")
-    st.write(db_teams)
-    
-    st.write("### 실시간 API 매칭 상태")
-    st.table(pd.DataFrame(schedule))
-    
-    st.info("왼쪽 '매칭' 열이 우리가 사용하는 3글자 약어(BAL, NYY 등)로 잘 변환되었는지 확인하세요.")
+    results = []
+    for game in schedule:
+        h = game['홈팀']
+        a = game['원정팀']
+        prob = calculate_win_prob(h, a, master_df)
+        results.append({"홈팀": h, "원정팀": a, "예상 승률": f"{prob}%"})
+    st.table(pd.DataFrame(results))
