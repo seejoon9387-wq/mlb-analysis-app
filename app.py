@@ -1,38 +1,42 @@
 import streamlit as st
-import statsapi
+import numpy as np
 
-# 1. 지능형 팀 ID 매핑 함수
-def get_team_id_by_name(input_name):
-    team_db = {
-        '볼티': 110, '볼티모어': 110, '오리올스': 110,
-        '양키스': 147, '뉴욕': 147, '양키': 147,
-        '보스턴': 111, '레드삭스': 111, '보삭': 111,
-        '다저스': 119, 'LA': 119
-    }
-    for key, team_id in team_db.items():
-        if input_name in key:
-            return team_id
-    return None
+# 1. 커스텀 라인업 전력 산출 엔진
+def get_player_stats(player_name):
+    # 실제 환경에서는 선수 데이터베이스(CSV 등)에서 추출
+    # 여기서는 예시를 위해 0.250~0.400 사이의 난수 가중치 적용
+    np.random.seed(len(player_name)) 
+    return np.random.uniform(0.250, 0.400)
+
+def analyze_custom_lineup(team_name, custom_lineup):
+    if not custom_lineup: return 0.0
+    scores = [get_player_stats(p) for p in custom_lineup]
+    return sum(scores) / len(scores)
 
 # 2. 메인 인터페이스
 st.set_page_config(layout="wide")
-st.title("⚾ MLB AI 지능형 매치업 분석기 v38.0")
+st.title("⚾ MLB AI 커스텀 라인업 시뮬레이터 v39.0")
 
-# 사용자 입력단
-col1, col2 = st.columns(2)
-home_input = col1.text_input("홈 팀 입력 (예: 볼티)", "보스턴")
-away_input = col2.text_input("원정 팀 입력 (예: 양키)", "양키스")
+# 입력 파트
+team_name = st.text_input("팀 이름", "보스턴 레드삭스")
+lineup_input = st.text_area("예상 라인업 (선수 이름을 콤마로 구분)", "무키 베츠, 프레디 프리먼, 오타니 쇼헤이")
 
-if st.button("분석 실행"):
-    home_id = get_team_id_by_name(home_input)
-    away_id = get_team_id_by_name(away_input)
+if st.button("라인업 전력 분석 실행"):
+    lineup_list = [name.strip() for name in lineup_input.split(',')]
     
-    if home_id and away_id:
-        with st.spinner("라이브 데이터를 불러오는 중..."):
-            # 라인업 호출 (v37.0 로직)
-            st.success(f"분석 시작: 홈 ID({home_id}) vs 원정 ID({away_id})")
-            
-            # [여기에 get_lineup_live_safe 호출 및 시각화 로직 삽입]
-            st.write("라인업 데이터 분석을 수행합니다...")
-    else:
-        st.error("팀 정보를 찾을 수 없습니다. 다시 입력해 주세요.")
+    with st.spinner("라인업 스탯 합산 및 전력 계산 중..."):
+        score = analyze_custom_lineup(team_name, lineup_list)
+        
+        st.subheader(f"📊 {team_name} 분석 결과")
+        st.metric("라인업 평균 전력 점수", f"{score:.3f}")
+        
+        # 
+        
+        if score > 0.350:
+            st.success("매우 강력한 공격형 라인업입니다!")
+        elif score > 0.300:
+            st.info("리그 평균 수준의 안정적인 라인업입니다.")
+        else:
+            st.warning("타선의 보강이 필요한 라인업으로 보입니다.")
+
+st.caption("Engine Status: Custom Lineup Analytics Active | v39.0")
