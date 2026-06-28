@@ -4,7 +4,7 @@ import requests
 from datetime import datetime
 import pytz
 
-# 1. 완벽한 팀 매핑 (약어 통일)
+# 1. 팀 매핑
 NAME_MAP = {
     "Baltimore Orioles": "BAL", "Washington Nationals": "WSH", "Pittsburgh Pirates": "PIT",
     "Cincinnati Reds": "CIN", "Toronto Blue Jays": "TOR", "Texas Rangers": "TEX",
@@ -18,41 +18,48 @@ NAME_MAP = {
     "Los Angeles Dodgers": "LAD", "Boston Red Sox": "BOS", "New York Yankees": "NYY"
 }
 
+# 2. 데이터 가져오기 함수 (기능별 공통 사용)
 @st.cache_data
-def get_live_mlb_data(target_date):
-    # API 요청: 상세 점수와 진행 상태를 포함
-    url = f"https://statsapi.mlb.com/api/v1/schedule/games/?sportId=1&date={target_date}&hydrate=linescore,game(content(summary))"
-    response = requests.get(url).json()
-    
-    data = []
-    if 'dates' in response and len(response['dates']) > 0:
-        games = response['dates'][0]['games']
+def get_mlb_data(target_date):
+    url = f"https://statsapi.mlb.com/api/v1/schedule/games/?sportId=1&date={target_date}&hydrate=linescore,probablePitcher"
+    try:
+        response = requests.get(url, timeout=10).json()
+        games = response.get('dates', [{}])[0].get('games', [])
+        data = []
         for g in games:
-            # 상태값(진행중/종료/예정) 확인
-            status = g['status']['detailedState']
-            home_name = g['teams']['home']['team']['name']
-            away_name = g['teams']['away']['team']['name']
-            
-            # 스코어 처리
             ls = g.get('linescore', {})
-            h_score = ls.get('teams', {}).get('home', {}).get('runs', 0) if status != 'Scheduled' else "-"
-            a_score = ls.get('teams', {}).get('away', {}).get('runs', 0) if status != 'Scheduled' else "-"
-            
             data.append({
-                "홈팀": NAME_MAP.get(home_name, home_name),
-                "원정팀": NAME_MAP.get(away_name, away_name),
-                "상태": status,
-                "스코어": f"{a_score} : {h_score}"
+                "경기시간": g['gameDate'].split('T')[1][:5],
+                "홈팀": NAME_MAP.get(g['teams']['home']['team']['name'], g['teams']['home']['team']['name']),
+                "원정팀": NAME_MAP.get(g['teams']['away']['team']['name'], g['teams']['away']['team']['name']),
+                "홈득점": ls.get('teams', {}).get('home', {}).get('runs', 0),
+                "원정득점": ls.get('teams', {}).get('away', {}).get('runs', 0),
+                "상태": g['status']['detailedState']
             })
-    return data
+        return data
+    except: return []
 
-# 2. 메인 UI
-st.title("⚾ MLB 실시간 경기 데이터 (2026-06-29)")
-if st.button("오늘 경기 정보 새로고침"):
-    today_str = datetime.now(pytz.timezone('Asia/Seoul')).strftime('%Y-%m-%d')
-    schedule = get_live_mlb_data(today_str)
-    
-    if schedule:
-        st.table(pd.DataFrame(schedule))
-    else:
-        st.write("오늘 예정된 경기가 없거나 API에서 데이터를 불러오지 못했습니다.")
+# 3. 사이드바 메뉴 구성
+st.sidebar.title("MLB 분석 도구")
+menu = st.sidebar.radio("메뉴 선택", ["경기 기록 및 일정 조회", "AI 승패 예측"])
+
+# 4. 기능 실행 로직
+if menu == "경기 기록 및 일정 조회":
+    st.subheader("날짜별 MLB 경기 기록")
+    selected_date = st.date_input("날짜 선택:", datetime.now())
+    if st.button("조회"):
+        data = get_mlb_data(selected_date.strftime('%Y-%m-%d'))
+        if data:
+            st.table(pd.DataFrame(data))
+        else:
+            st.write("해당 날짜의 경기 정보가 없습니다.")
+
+elif menu == "AI 승패 예측":
+    st.subheader("데이터 기반 승패 예측")
+    if st.button("오늘 경기 예측 실행"):
+        data = get_mlb_data(datetime.now().strftime('%Y-%m-%d'))
+        if data:
+            # 여기서는 단순히 오늘 데이터를 보여주되, 추후 승률 알고리즘 추가 가능
+            st.table(pd.DataFrame(data))
+        else:
+            st.write("예측할 데이터가 없습니다.")
