@@ -1,46 +1,28 @@
+# 버전: v65.0
+# 목적: 코랩 환경에서 pybaseball을 이용해 데이터가 정상적으로 저장되는지 검증
 import streamlit as st
 import pandas as pd
 from pybaseball import statcast
 import os
 
-# 각 연도별로 파일 분할 관리
-def get_data_file_name(year):
-    return f"mlb_data_{year}.csv"
+st.title("⚾ v65.0 데이터 생성 검증기")
 
-def fetch_year_data(year):
-    """특정 연도의 데이터를 가져와 파일로 저장합니다."""
-    st.write(f"--- {year}년 데이터 수집 시작 (4월~10월) ---")
-    all_months_data = []
-    
-    # 4월부터 10월까지 안전하게 반복
-    for month in range(4, 11): 
-        start = f"{year}-{month:02d}-01"
-        # 월말 날짜를 안전하게 계산 (28일까지만 해도 충분)
-        end = f"{year}-{month:02d}-28"
+if st.button("2024년 4월 데이터 수집 및 파일 저장"):
+    with st.spinner("데이터를 수집 중입니다..."):
         try:
-            data = statcast(start_dt=start, end_dt=end)
-            all_months_data.append(data)
-            st.write(f"  > {month}월 완료 ({len(data)}건)")
+            # 테스트 수집
+            df = statcast(start_dt="2024-04-01", end_dt="2024-04-07")
+            save_path = "/content/mlb_test_2024.csv"
+            df.to_csv(save_path, index=False)
+            
+            # 검증 단계
+            if os.path.exists(save_path):
+                st.success(f"성공! 파일이 생성되었습니다: {save_path}")
+                st.write(f"데이터 크기: {df.shape}")
+            else:
+                st.error("파일 생성 실패: 경로를 확인하세요.")
         except Exception as e:
-            st.warning(f"  > {month}월 수집 중 오류 (건너뜁니다): {e}")
-    
-    if all_months_data:
-        full_df = pd.concat(all_months_data)
-        full_df.to_csv(get_data_file_name(year), index=False)
-        return True
-    return False
+            st.error(f"오류 발생: {e}")
 
-st.title("⚾ MLB 2024-2026 연도별 데이터 센터")
-
-col1, col2, col3 = st.columns(3)
-if col1.button("2024년 전체 수집"): fetch_year_data(2024)
-if col2.button("2025년 전체 수집"): fetch_year_data(2025)
-if col3.button("2026년 전체 수집"): fetch_year_data(2026)
-
-st.subheader("데이터 파일 상태")
-for y in [2024, 2025, 2026]:
-    filename = get_data_file_name(y)
-    if os.path.exists(filename):
-        st.success(f"{y}년 데이터 파일 있음: {os.path.getsize(filename)/1024/1024:.1f} MB")
-    else:
-        st.warning(f"{y}년 데이터 파일 없음")
+st.subheader("현재 /content 폴더 내 파일 목록")
+st.write(os.listdir('/content/'))
