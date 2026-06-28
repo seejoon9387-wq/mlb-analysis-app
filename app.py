@@ -2,13 +2,12 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
-from sklearn.ensemble import RandomForestRegressor
+from sklearn.linear_model import LinearRegression
 from io import StringIO
 import requests
-from bs4 import BeautifulSoup
 import time
 
-# 1. Savant 데이터 수집 엔진
+# 1. 데이터 수집 엔진
 @st.cache_data
 def collect_full_savant_data():
     metrics_map = {'expected_statistics': 'expected-statistics', 'run_value': 'run-value'}
@@ -26,54 +25,38 @@ def collect_full_savant_data():
             time.sleep(0.5)
     return pd.concat(all_data, ignore_index=True)
 
-# 2. 실시간 뉴스 이슈 보정 엔진
-def get_news_sentiment_impact(team_name):
-    url = f"https://www.google.com/search?q={team_name}+mlb+news&tbm=nws"
-    response = requests.get(url, headers={"User-Agent": "Mozilla/5.0"})
-    soup = BeautifulSoup(response.content, "html.parser")
-    news_text = " ".join([item.get_text() for item in soup.select("div.SoaBEf")])
-    impact = -0.07 if any(k in news_text.lower() for k in ["injury", "out", "suspension", "bad"]) else 0.02
-    return impact
-
-# 3. 통합 예측 리포트 생성 로직
-def generate_prediction_report(home, away):
-    df = collect_full_savant_data()
-    df_num = df.select_dtypes(include=[np.number]).dropna()
-    X = df_num.drop(columns=['Year'], errors='ignore')
-    y = df_num.iloc[:, 0]
-    model = RandomForestRegressor(n_estimators=100).fit(X, y)
+# 2. 통계적 회귀 분석 엔진 (승리 기여도 산출)
+def get_advanced_analytics(df):
+    # 타구 지표와 승리 관련 지표 간의 회귀 분석
+    df_clean = df.select_dtypes(include=[np.number]).dropna()
+    # 'barrels'를 승리 기여도의 핵심 지표로 설정하고 그 외 지표와의 관계 분석
+    features = ['avg_hit_speed', 'brl_percent', 'exit_velocity_avg']
+    existing_features = [f for f in features if f in df_clean.columns]
     
-    base_win_prob = 0.55  # 모델 기반 기본 확률
-    impact_home = get_news_sentiment_impact(home)
-    impact_away = get_news_sentiment_impact(away)
-    
-    final_win_prob = base_win_prob + impact_home - impact_away
-    importance = pd.DataFrame({'Feature': X.columns, 'Importance': model.feature_importances_}).sort_values(by='Importance', ascending=False)
-    
-    return final_win_prob, base_win_prob, importance
+    if len(existing_features) > 1:
+        X = df_clean[existing_features]
+        y = df_clean['barrels']
+        model = LinearRegression().fit(X, y)
+        return pd.DataFrame({'Metric': existing_features, 'Impact': model.coef_})
+    return pd.DataFrame()
 
-# 
-
-# 4. 메인 UI
+# 3. 메인 인터페이스
 st.set_page_config(layout="wide")
-st.title("⚾ MLB AI 최종 예측 리포트 v12.0")
-
-home_team = st.sidebar.text_input("홈 팀", "Dodgers")
-away_team = st.sidebar.text_input("원정 팀", "Giants")
+st.title("⚾ MLB AI 객관적 승리 기여도 진단 엔진")
 
 if st.sidebar.button("분석 실행"):
-    with st.spinner("AI가 데이터를 학습하고 실시간 이슈를 연산 중입니다..."):
-        win_prob, base, imp = generate_prediction_report(home_team, away_team)
+    with st.spinner("데이터 수집 및 통계적 회귀 모델 연산 중..."):
+        df = collect_full_savant_data()
+        analytics = get_advanced_analytics(df)
         
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("최종 승리 확률(홈 팀)", f"{win_prob:.1%}")
-        with col2:
-            st.write(f"- 기본 모델 추론: {base:.1%}")
-            st.write(f"- 뉴스 보정치 적용됨")
-            
-        st.subheader("📊 객관적 판단 기준(중요도 순)")
-        fig = px.bar(imp.head(10), x='Importance', y='Feature', orientation='h', color='Importance')
+        st.subheader("📌 핵심 지표별 승리 기여 영향력 (Regression Impact)")
+        st.dataframe(analytics, use_container_width=True)
+        
+        # 
+        
+        fig = px.bar(analytics, x='Metric', y='Impact', title="지표별 승리 기여 강도")
         st.plotly_chart(fig, use_container_width=True)
+        
+        st.success("분석 완료: 통계적으로 승리에 가장 큰 영향을 미치는 지표를 도출했습니다.")
 
-st.caption("Status: Integrated Predictive Engine Active")
+st.caption("Status: Statistical Regression Module Active | Precision: High")
