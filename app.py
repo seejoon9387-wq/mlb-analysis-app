@@ -2,64 +2,50 @@ import streamlit as st
 import pandas as pd
 import requests
 from datetime import datetime
-import pytz
 
-# 1. 팀 매핑
-NAME_MAP = {
-    "Baltimore Orioles": "BAL", "Washington Nationals": "WSH", "Pittsburgh Pirates": "PIT",
-    "Cincinnati Reds": "CIN", "Toronto Blue Jays": "TOR", "Texas Rangers": "TEX",
-    "Detroit Tigers": "DET", "Houston Astros": "HOU", "Cleveland Guardians": "CLE",
-    "Seattle Mariners": "SEA", "Tampa Bay Rays": "TB", "Arizona Diamondbacks": "ARI",
-    "New York Mets": "NYM", "Philadelphia Phillies": "PHI", "Minnesota Twins": "MIN",
-    "Colorado Rockies": "COL", "Chicago White Sox": "CWS", "Kansas City Royals": "KC",
-    "Milwaukee Brewers": "MIL", "Chicago Cubs": "CHC", "St. Louis Cardinals": "STL",
-    "Miami Marlins": "MIA", "Los Angeles Angels": "LAA", "Oakland Athletics": "OAK",
-    "San Francisco Giants": "SF", "Atlanta Braves": "ATL", "San Diego Padres": "SD",
-    "Los Angeles Dodgers": "LAD", "Boston Red Sox": "BOS", "New York Yankees": "NYY"
-}
+# 1. 데이터 병합을 위한 공통 키 함수
+def get_team_key(name):
+    # API 팀명과 CSV 팀명을 일치시키기 위한 정규화
+    mapping = {"Arizona Diamondbacks": "ARI", "Baltimore Orioles": "BAL", "New York Yankees": "NYY", "Boston Red Sox": "BOS", "Los Angeles Dodgers": "LAD", "San Francisco Giants": "SF", "Chicago Cubs": "CHC", "Texas Rangers": "TEX"}
+    return mapping.get(name, name)
 
-# 2. 데이터 가져오기 함수 (기능별 공통 사용)
 @st.cache_data
-def get_mlb_data(target_date):
-    url = f"https://statsapi.mlb.com/api/v1/schedule/games/?sportId=1&date={target_date}&hydrate=linescore,probablePitcher"
+def get_master_data():
+    url = 'https://drive.google.com/uc?export=download&id=1ImEBCjIFN-0K0plfLaQvTcJhhEVHV6DY&confirm=t'
+    df = pd.read_csv(url)
+    # CSV의 날짜 포맷을 'YYYY-MM-DD'로 표준화
+    df['date'] = pd.to_datetime(df['date']).dt.strftime('%Y-%m-%d')
+    return df
+
+@st.cache_data
+def get_live_schedule(target_date):
+    url = f"https://statsapi.mlb.com/api/v1/schedule/games/?sportId=1&date={target_date}&hydrate=linescore"
     try:
-        response = requests.get(url, timeout=10).json()
-        games = response.get('dates', [{}])[0].get('games', [])
+        response = requests.get(url).json()
+        games = response['dates'][0]['games']
         data = []
         for g in games:
-            ls = g.get('linescore', {})
             data.append({
-                "경기시간": g['gameDate'].split('T')[1][:5],
-                "홈팀": NAME_MAP.get(g['teams']['home']['team']['name'], g['teams']['home']['team']['name']),
-                "원정팀": NAME_MAP.get(g['teams']['away']['team']['name'], g['teams']['away']['team']['name']),
-                "홈득점": ls.get('teams', {}).get('home', {}).get('runs', 0),
-                "원정득점": ls.get('teams', {}).get('away', {}).get('runs', 0),
-                "상태": g['status']['detailedState']
+                "date": target_date,
+                "home": g['teams']['home']['team']['name'],
+                "away": g['teams']['away']['team']['name']
             })
-        return data
-    except: return []
+        return pd.DataFrame(data)
+    except: return pd.DataFrame()
 
-# 3. 사이드바 메뉴 구성
-st.sidebar.title("MLB 분석 도구")
-menu = st.sidebar.radio("메뉴 선택", ["경기 기록 및 일정 조회", "AI 승패 예측"])
+# 2. 메인 로직: 날짜/팀 기준으로 데이터 매칭
+st.title("⚾ 날짜별 정밀 데이터 매칭 조회")
+selected_date = st.date_input("날짜 선택:", datetime.now())
 
-# 4. 기능 실행 로직
-if menu == "경기 기록 및 일정 조회":
-    st.subheader("날짜별 MLB 경기 기록")
-    selected_date = st.date_input("날짜 선택:", datetime.now())
-    if st.button("조회"):
-        data = get_mlb_data(selected_date.strftime('%Y-%m-%d'))
-        if data:
-            st.table(pd.DataFrame(data))
-        else:
-            st.write("해당 날짜의 경기 정보가 없습니다.")
+if st.button("데이터 매칭 실행"):
+    target_date = selected_date.strftime('%Y-%m-%d')
+    live_df = get_live_schedule(target_date)
+    master_df = get_master_data()
 
-elif menu == "AI 승패 예측":
-    st.subheader("데이터 기반 승패 예측")
-    if st.button("오늘 경기 예측 실행"):
-        data = get_mlb_data(datetime.now().strftime('%Y-%m-%d'))
-        if data:
-            # 여기서는 단순히 오늘 데이터를 보여주되, 추후 승률 알고리즘 추가 가능
-            st.table(pd.DataFrame(data))
-        else:
-            st.write("예측할 데이터가 없습니다.")
+    if not live_df.empty:
+        # 데이터 병합 (날짜와 팀 이름이 같으면 데이터 붙이기)
+        merged = pd.merge(live_df, master_df, on=['date'], how='inner')
+        st.subheader(f"{target_date} 매칭 결과")
+        st.table(merged)
+    else:
+        st.warning("선택한 날짜에 일치하는 데이터가 없습니다.")
