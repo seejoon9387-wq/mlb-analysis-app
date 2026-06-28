@@ -1,27 +1,34 @@
-# 버전: v73.0
-# 목적: 수집된 CSV 조각들을 합치고 중복 제거
+# 버전: v74.0
+# 목적: 파일 유무 확인 후 안전하게 병합
 import pandas as pd
 import glob
+import streamlit as st
 
-# 1. 다운로드받은 파일들이 있는 폴더에 모두 모아두세요
-# 2. 아래 코드를 실행하면 중복이 제거된 하나의 파일이 생성됩니다.
 def clean_and_merge_data():
-    # 모든 csv 파일 불러오기
+    # 현재 폴더에 있는 모든 mlb_*.csv 파일 찾기
     all_files = glob.glob("mlb_*.csv")
     
-    # 리스트에 담기
-    df_list = [pd.read_csv(f) for f in all_files]
+    # 파일이 하나라도 있는지 확인
+    if not all_files:
+        st.error("❌ 병합할 파일이 없습니다! 다운로드받은 CSV 파일들을 같은 폴더에 업로드했는지 확인하세요.")
+        return None
     
-    # 하나로 합치기
+    st.write(f"📂 발견된 파일 수: {len(all_files)}개")
+    
+    df_list = [pd.read_csv(f) for f in all_files]
     full_df = pd.concat(df_list, ignore_index=True)
     
-    # 중복 제거 (스탯캐스트 데이터는 'pitch_id'가 고유값입니다)
-    # 만약 pitch_id가 없다면 모든 컬럼 기준으로 제거
-    clean_df = full_df.drop_duplicates(subset=['pitch_id'])
-    
-    # 결과 저장
-    clean_df.to_csv("final_mlb_data_2024_2026.csv", index=False)
-    print(f"중복 제거 전: {len(full_df)}건 -> 제거 후: {len(clean_df)}건")
+    # 중복 제거 (데이터에 pitch_id가 반드시 있어야 함)
+    if 'pitch_id' in full_df.columns:
+        clean_df = full_df.drop_duplicates(subset=['pitch_id'])
+    else:
+        clean_df = full_df.drop_duplicates()
+        
+    st.success(f"✅ 중복 제거 완료! 총 데이터: {len(clean_df)}건")
+    return clean_df
 
-# 실행
-clean_and_merge_data()
+# Streamlit UI에서 실행
+if st.button("데이터 병합 시작"):
+    final_data = clean_and_merge_data()
+    if final_data is not None:
+        st.download_button("최종 데이터 저장", final_data.to_csv(index=False), "final_data.csv")
