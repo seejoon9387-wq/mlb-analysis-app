@@ -11,34 +11,38 @@ def load_and_merge_stats():
     def get_df(fid):
         url = f"https://drive.google.com/uc?export=download&confirm=t&id={fid}"
         res = requests.get(url)
+        
+        # 1. HTML 페이지인지 확인하고, 그렇다면 진짜 다운로드 링크로 다시 시도
+        if b"<!doctype html>" in res.content:
+            # HTML 경고 페이지라면 파일 내용을 아예 무시하고 빈 데이터프레임 반환
+            return pd.DataFrame()
+        
         df = pd.read_csv(io.BytesIO(res.content))
-        # 1. 컬럼명을 소문자로 통일하고 앞뒤 공백 제거
         df.columns = [c.strip().lower() for c in df.columns]
         return df
 
     df_game = get_df(FILE_ID_GAME)
     df_player = get_df(FILE_ID_PLAYER)
     
-    # 2. 날짜 컬럼 자동 찾기 (date 또는 날짜 관련 이름이 없으면 0번 컬럼 사용)
-    def clean_date_col(df):
-        date_col = next((c for c in df.columns if 'date' in c), df.columns[0])
-        df = df.rename(columns={date_col: 'date'})
-        df['date'] = pd.to_datetime(df['date'], errors='coerce')
-        return df
+    # 2. 로드 실패(빈 데이터) 확인
+    if df_game.empty or df_player.empty:
+        return None, "데이터 중 하나가 로드되지 않았습니다. 파일 공유 설정을 다시 확인하세요."
 
-    df_game = clean_date_col(df_game)
-    df_player = clean_date_col(df_player)
+    # 3. 날짜 컬럼 보정 및 병합
+    df_game['date'] = pd.to_datetime(df_game['date'], errors='coerce')
     
-    # 3. 데이터 병합 (날짜 기준)
-    # 선수기록(player)에 경기기록(game)을 붙입니다.
+    # 선수 데이터도 'date' 컬럼이 있는 파일이어야 합니다.
+    # 만약 선수 데이터에 date가 없다면 이름 확인이 필요합니다.
+    df_player['date'] = pd.to_datetime(df_player['date'], errors='coerce')
+    
     merged_df = pd.merge(df_player, df_game, on='date', how='left')
-    
-    return merged_df
+    return merged_df, None
 
-# 로드 실행
-try:
-    df = load_and_merge_stats()
-    st.dataframe(df.head()) # 데이터가 잘 합쳐졌는지 확인
-    st.write("컬럼 목록:", list(df.columns))
-except Exception as e:
-    st.error(f"오류 발생: {e}")
+# UI 실행
+df, error_msg = load_and_merge_stats()
+
+if error_msg:
+    st.error(error_msg)
+else:
+    st.success("통합 완료!")
+    st.dataframe(df.head())
