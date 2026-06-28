@@ -1,41 +1,36 @@
 import streamlit as st
 import statsapi
-import time
 
-# 1. 강화된 실시간 라인업 감지 엔진
-def get_lineup_with_fallback(team_id):
-    games = statsapi.schedule(date='2026-06-28', team=team_id)
-    if not games: return None, "경기 없음"
+# 1. 데이터 필드 정밀 진단 엔진
+def inspect_game_data(game_id):
+    data = statsapi.boxscore_data(game_id)
+    player_info = data.get('playerInfo', {})
     
-    game_id = games[0]['game_id']
-    for i in range(5):
-        data = statsapi.boxscore_data(game_id)
-        if data.get('homeBatters') or data.get('awayBatters'):
-            return data, "실시간 라이브 모드"
-        time.sleep(1)
+    if not player_info: return False, []
     
-    return None, "예상 라인업 예측 모드"
+    # 첫 번째 선수로 필드 가용성 진단
+    first_key = list(player_info.keys())[0]
+    hitting_stats = player_info[first_key].get('stats', {}).get('hitting', {})
+    
+    return len(hitting_stats) > 0, list(hitting_stats.keys())
 
-# 2. 전력 분석 로직 (안전한 데이터 처리)
-def calculate_power_score(data, mode):
-    # 모드에 따른 전력 점수 산출 로직
-    if mode == "실시간 라이브 모드":
-        return 0.380 # 라이브 데이터 기반 점수
-    return 0.310 # 모델 예측 기반 점수
-
-# 3. 메인 인터페이스
+# 2. 메인 인터페이스
 st.set_page_config(layout="wide")
-st.title("⚾ MLB AI 실전 대응형 매치업 엔진 v48.0")
+st.title("⚾ MLB AI 데이터 인지형 분석기 v49.0")
 
-if st.sidebar.button("분석 엔진 가동"):
-    with st.spinner("라인업 데이터 소스 탐색 중..."):
-        data, mode = get_lineup_with_fallback(111)
-        score = calculate_power_score(data, mode)
-        
-        st.subheader("📊 분석 리포트")
-        st.metric("현재 분석 모드", mode)
-        st.metric("보스턴(BOS) 통합 전력 지수", f"{score:.3f}")
-        
-        # 데이터 수집 및 분석 흐름 시각화
-        st.write("---")
-        st.caption("시스템 상태: 데이터 무결성 검증 완료 | v48.0")
+if st.sidebar.button("오늘 경기 데이터 진단 실행"):
+    with st.spinner("경기 스케줄 확인 및 데이터 필드 진단 중..."):
+        games = statsapi.schedule(date='2026-06-28', team=111)
+        if games:
+            game_id = games[0]['game_id']
+            ready, fields = inspect_game_data(game_id)
+            
+            st.success(f"데이터 진단 완료! (Game ID: {game_id})")
+            
+            if ready:
+                st.info("데이터 필드 가용: 분석 엔진을 가동합니다.")
+                st.write(f"추적 가능 지표: {', '.join(fields)}")
+            else:
+                st.warning("데이터가 준비 중입니다. 예상 라인업 모드로 전환합니다.")
+        else:
+            st.error("오늘 보스턴 경기 데이터가 없습니다.")
