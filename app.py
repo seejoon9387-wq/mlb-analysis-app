@@ -3,29 +3,31 @@ import pandas as pd
 import requests
 import io
 
-def load_data_from_drive(file_ids):
-    all_dfs = []
-    for fid in file_ids:
+st.set_page_config(layout="wide")
+st.title("⚾ MLB 데이터 조회 테스트")
+
+FILE_IDS = ["1HoUl7WmX2YuLww3yNg6O09IB0kwOJEtN", "1iFelqEtUV-SQqnMeAuEN_XdEMjyuU9jH"]
+
+# 데이터 로드 함수
+def load_all_data(ids):
+    data_frames = []
+    for fid in ids:
         url = f"https://drive.google.com/uc?id={fid}"
         try:
             res = requests.get(url)
             df = pd.read_csv(io.BytesIO(res.content))
-            
-            # --- [핵심 수정: 컬럼명 자동 보정] ---
-            # 컬럼 이름들을 소문자로 바꾸고 공백 제거 (Date, date, 날짜 등 모두 대응)
-            df.columns = [c.strip().lower() for c in df.columns]
-            
-            # 만약 'date'라는 이름이 없다면, 첫 번째 컬럼을 'date'로 강제 지정
-            if 'date' not in df.columns:
-                df.rename(columns={df.columns[0]: 'date'}, inplace=True)
-            
-            # 날짜 형식 변환 (에러 발생 시 무시하고 데이터 그대로 유지)
-            df['date'] = pd.to_datetime(df['date'], errors='coerce')
-            
-            all_dfs.append(df)
+            df.columns = [c.strip().lower() for c in df.columns] # 컬럼명 보정
+            data_frames.append(df)
+            st.write(f"파일 {fid} 로드 성공! (컬럼: {list(df.columns)})") # 로드 성공 확인용
         except Exception as e:
-            st.error(f"파일 ID {fid} 처리 중 오류: {e}")
-    
-    return pd.concat(all_dfs, ignore_index=True) if all_dfs else pd.DataFrame()
+            st.error(f"파일 {fid} 로드 중 에러: {e}")
+    return pd.concat(data_frames, ignore_index=True) if data_frames else pd.DataFrame()
 
-# ... (이하 달력 UI 구성은 동일)
+# 데이터 가져오기
+df = load_all_data(FILE_IDS)
+
+if not df.empty:
+    st.write(f"데이터 총 개수: {len(df)}")
+    st.dataframe(df.head()) # 데이터가 제대로 들어왔는지 확인
+else:
+    st.warning("데이터가 비어있습니다. 구글 드라이브 공유 설정을 확인하세요.")
