@@ -21,7 +21,6 @@ NAME_MAP = {
 def normalize_team_name(name):
     return NAME_MAP.get(name, name)
 
-# 2. 모든 함수 정의
 @st.cache_data
 def get_mlb_schedule():
     today = datetime.now().strftime('%Y-%m-%d')
@@ -37,6 +36,16 @@ def get_mlb_schedule():
             })
         return data
     except: return []
+
+@st.cache_data
+def load_and_fix_data():
+    url = 'https://drive.google.com/uc?export=download&id=1ImEBCjIFN-0K0plfLaQvTcJhhEVHV6DY&confirm=t'
+    df = pd.read_csv(url)
+    
+    # 여기서 'team' 컬럼을 강제로 만듭니다!
+    df_home = df[['home_team', 'home_score']].rename(columns={'home_team': 'team', 'home_score': 'score'})
+    df_away = df[['away_team', 'away_score']].rename(columns={'away_team': 'team', 'away_score': 'score'})
+    return pd.concat([df_home, df_away])
 
 def get_prediction(home, away, master_df):
     h_data = master_df[master_df['team'] == home]
@@ -58,7 +67,8 @@ elif menu == "AI 승패 예측":
     st.subheader("오늘의 경기 승률 예측 (데이터 기반)")
     if st.button("예측 분석 실행"):
         schedule = get_mlb_schedule()
-        master_df = pd.read_csv('https://drive.google.com/uc?export=download&id=1ImEBCjIFN-0K0plfLaQvTcJhhEVHV6DY&confirm=t')
+        master_df = load_and_fix_data() # 구조가 고정된 데이터를 불러옴
+        
         results = []
         for game in schedule:
             prob = get_prediction(game['홈팀'], game['원정팀'], master_df)
