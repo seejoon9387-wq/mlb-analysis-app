@@ -4,64 +4,55 @@ import requests
 from datetime import datetime
 import pytz
 
-# 1. 완벽한 이름 매핑 (공식 명칭 업데이트)
+# 1. 완벽한 팀 매핑 (약어 통일)
 NAME_MAP = {
-    "Arizona Diamondbacks": "ARI", "Atlanta Braves": "ATL", "Baltimore Orioles": "BAL",
-    "Boston Red Sox": "BOS", "Chicago Cubs": "CHC", "Chicago White Sox": "CWS",
-    "Cincinnati Reds": "CIN", "Cleveland Guardians": "CLE", "Colorado Rockies": "COL",
-    "Detroit Tigers": "DET", "Houston Astros": "HOU", "Kansas City Royals": "KC",
-    "Los Angeles Angels": "LAA", "Los Angeles Dodgers": "LAD", "Miami Marlins": "MIA",
-    "Milwaukee Brewers": "MIL", "Minnesota Twins": "MIN", "New York Mets": "NYM",
-    "New York Yankees": "NYY", "Oakland Athletics": "OAK", "Philadelphia Phillies": "PHI",
-    "Pittsburgh Pirates": "PIT", "San Diego Padres": "SD", "San Francisco Giants": "SF",
-    "Seattle Mariners": "SEA", "St. Louis Cardinals": "STL", "Tampa Bay Rays": "TB",
-    "Texas Rangers": "TEX", "Toronto Blue Jays": "TOR", "Washington Nationals": "WSH"
+    "Baltimore Orioles": "BAL", "Washington Nationals": "WSH", "Pittsburgh Pirates": "PIT",
+    "Cincinnati Reds": "CIN", "Toronto Blue Jays": "TOR", "Texas Rangers": "TEX",
+    "Detroit Tigers": "DET", "Houston Astros": "HOU", "Cleveland Guardians": "CLE",
+    "Seattle Mariners": "SEA", "Tampa Bay Rays": "TB", "Arizona Diamondbacks": "ARI",
+    "New York Mets": "NYM", "Philadelphia Phillies": "PHI", "Minnesota Twins": "MIN",
+    "Colorado Rockies": "COL", "Chicago White Sox": "CWS", "Kansas City Royals": "KC",
+    "Milwaukee Brewers": "MIL", "Chicago Cubs": "CHC", "St. Louis Cardinals": "STL",
+    "Miami Marlins": "MIA", "Los Angeles Angels": "LAA", "Oakland Athletics": "OAK",
+    "San Francisco Giants": "SF", "Atlanta Braves": "ATL", "San Diego Padres": "SD",
+    "Los Angeles Dodgers": "LAD", "Boston Red Sox": "BOS", "New York Yankees": "NYY"
 }
 
-def get_match_key(team_name):
-    # 공백 제거 및 대소문자 통일 후 매핑
-    clean_name = team_name.strip()
-    return NAME_MAP.get(clean_name, clean_name)
-
 @st.cache_data
-def get_mlb_schedule(target_date):
-    url = f"https://statsapi.mlb.com/api/v1/schedule/games/?sportId=1&date={target_date}&hydrate=probablePitcher,linescore"
-    try:
-        response = requests.get(url, timeout=10).json()
+def get_live_mlb_data(target_date):
+    # API 요청: 상세 점수와 진행 상태를 포함
+    url = f"https://statsapi.mlb.com/api/v1/schedule/games/?sportId=1&date={target_date}&hydrate=linescore,game(content(summary))"
+    response = requests.get(url).json()
+    
+    data = []
+    if 'dates' in response and len(response['dates']) > 0:
         games = response['dates'][0]['games']
-        data = []
         for g in games:
-            # 원본 팀명
-            home_raw = g['teams']['home']['team']['name']
-            away_raw = g['teams']['away']['team']['name']
+            # 상태값(진행중/종료/예정) 확인
+            status = g['status']['detailedState']
+            home_name = g['teams']['home']['team']['name']
+            away_name = g['teams']['away']['team']['name']
             
-            # 매칭 시도
-            home_match = get_match_key(home_raw)
-            away_match = get_match_key(away_raw)
-            
+            # 스코어 처리
             ls = g.get('linescore', {})
+            h_score = ls.get('teams', {}).get('home', {}).get('runs', 0) if status != 'Scheduled' else "-"
+            a_score = ls.get('teams', {}).get('away', {}).get('runs', 0) if status != 'Scheduled' else "-"
+            
             data.append({
-                "홈팀(매칭)": home_match,
-                "원정팀(매칭)": away_match,
-                "홈팀(원본)": home_raw,
-                "원정팀(원본)": away_raw,
-                "스코어": f"{ls.get('teams', {}).get('away', {}).get('runs', 0)}:{ls.get('teams', {}).get('home', {}).get('runs', 0)}"
+                "홈팀": NAME_MAP.get(home_name, home_name),
+                "원정팀": NAME_MAP.get(away_name, away_name),
+                "상태": status,
+                "스코어": f"{a_score} : {h_score}"
             })
-        return data
-    except: return []
+    return data
 
-# 2. UI 및 로직
-st.set_page_config(layout="wide")
-menu = st.sidebar.radio("메뉴", ["데이터 점검", "AI 예측"])
-
-if menu == "데이터 점검":
-    st.subheader("100% 매칭을 위한 팀 이름 진단")
-    date_val = st.date_input("날짜 선택:", datetime.now())
-    if st.button("진단 시작"):
-        schedule = get_mlb_schedule(date_val.strftime('%Y-%m-%d'))
-        df = pd.DataFrame(schedule)
-        st.table(df)
-        st.info("위 표에서 '홈팀(매칭)'이 3글자 약어로 나오지 않는다면, 그 이름을 알려주세요. 즉시 NAME_MAP에 추가하겠습니다.")
-
-elif menu == "AI 예측":
-    st.write("진단 완료 후 예측을 실행하세요.")
+# 2. 메인 UI
+st.title("⚾ MLB 실시간 경기 데이터 (2026-06-29)")
+if st.button("오늘 경기 정보 새로고침"):
+    today_str = datetime.now(pytz.timezone('Asia/Seoul')).strftime('%Y-%m-%d')
+    schedule = get_live_mlb_data(today_str)
+    
+    if schedule:
+        st.table(pd.DataFrame(schedule))
+    else:
+        st.write("오늘 예정된 경기가 없거나 API에서 데이터를 불러오지 못했습니다.")
