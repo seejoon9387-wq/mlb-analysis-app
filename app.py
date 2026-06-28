@@ -4,44 +4,48 @@ import requests
 import io
 from datetime import datetime, timedelta
 
+# KST 고정 함수
+def get_kst_date(date_val):
+    # 날짜를 읽어온 뒤 +9시간을 더해 KST로 고정
+    dt = pd.to_datetime(date_val)
+    return (dt + timedelta(hours=9)).normalize()
+
 FILE_ID_GAME = "1_xl0LlfH65-K1TAsyH7nUq7ExQB5JTWx"
 
 @st.cache_data
 def load_game_data(fid):
     url = f"https://drive.google.com/uc?export=download&confirm=t&id={fid}"
-    try:
-        res = requests.get(url)
-        df = pd.read_csv(io.BytesIO(res.content))
-        df.columns = [c.strip().lower() for c in df.columns]
-        
-        # 1. 날짜 데이터: 시간 제거 후 순수 날짜로 변환
-        df['date'] = pd.to_datetime(df['date'], errors='coerce').dt.normalize()
-        
-        # 2. 점수 데이터: 숫자로 강제 변환 (문자열 등 오염 제거)
-        df['home_score'] = pd.to_numeric(df['home_score'], errors='coerce').fillna(0).astype(int)
-        df['away_score'] = pd.to_numeric(df['away_score'], errors='coerce').fillna(0).astype(int)
-        
-        return df
-    except Exception as e:
-        return pd.DataFrame()
+    res = requests.get(url)
+    df = pd.read_csv(io.BytesIO(res.content))
+    df.columns = [c.strip().lower() for c in df.columns]
+    
+    # KST 강제 변환
+    df['date'] = df['date'].apply(get_kst_date)
+    
+    # 점수 컬럼 강제 숫자화
+    df['home_score'] = pd.to_numeric(df['home_score'], errors='coerce').fillna(0).astype(int)
+    df['away_score'] = pd.to_numeric(df['away_score'], errors='coerce').fillna(0).astype(int)
+    return df
 
 st.set_page_config(layout="wide")
-st.title("⚾ MLB 2024-2026 경기 결과 (정밀 매칭)")
+st.title("⚾ MLB 데이터 정밀 매칭 리포트")
 
 df = load_game_data(FILE_ID_GAME)
 
-if not df.empty:
-    selected_date = st.date_input("조회할 날짜를 선택하세요:", value=datetime.utcnow().date())
+# 달력
+selected_date = st.date_input("조회할 날짜:", value=datetime.utcnow().date() + timedelta(hours=9))
+target_date = pd.Timestamp(selected_date).normalize()
+
+# 매칭 확인
+match_data = df[df['date'] == target_date]
+
+if not match_data.empty:
+    st.success(f"{selected_date} 경기: {len(match_data)}건")
+    st.dataframe(match_data, use_container_width=True)
     
-    # 3. 날짜 범위 검색 (±1일 범위 포함) - 시차 보정용
-    target = pd.to_datetime(selected_date)
-    match_data = df[(df['date'] >= target - timedelta(days=1)) & (df['date'] <= target + timedelta(days=1))]
-    
-    if not match_data.empty:
-        # 데이터 시각화 시 점수 매칭 확인
-        st.success(f"조회 결과 (전후 1일 포함): {len(match_data)}건의 기록")
-        st.dataframe(match_data[['date', 'home_team', 'away_team', 'home_score', 'away_score', 'venue']], use_container_width=True)
-    else:
-        st.warning("해당 날짜 전후로 데이터를 찾을 수 없습니다.")
+    # 🔍 데이터가 꼬였는지 확인하는 디버깅 테이블
+    st.write("---")
+    st.write("### 데이터 구조 체크 (이름과 점수가 맞는지 확인하세요)")
+    st.table(match_data[['home_team', 'home_score', 'away_team', 'away_score']].head(10))
 else:
-    st.error("데이터 로드 실패")
+    st.warning("데이터 없음. 데이터 원본의 날짜 형식을 확인하세요.")
