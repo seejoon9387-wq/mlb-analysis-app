@@ -1,52 +1,41 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
-import plotly.express as px
-from sklearn.linear_model import LinearRegression
-import time, random, requests, os
-from io import StringIO
+from pybaseball import schedule_and_record
+from sklearn.ensemble import RandomForestClassifier
 
-# 1. 차단 방지형 안전 수집 엔진
-def collect_safe_data():
-    headers = {"User-Agent": "Mozilla/5.0", "Referer": "https://baseballsavant.mlb.com/"}
-    session = requests.Session()
-    url = "https://baseballsavant.mlb.com/leaderboard/pitch-arsenal-stats?year=2026&csv=true"
-    try:
-        response = session.get(url, headers=headers, timeout=15)
-        if response.status_code == 200:
-            df = pd.read_csv(StringIO(response.text))
-            df.to_csv('mlb_safe_data.csv', index=False)
-            return df
-    except: return None
+# 1. 데이터 병합 최적화 엔진 (1번 적용)
+@st.cache_data
+def get_ready_to_train_data():
+    statcast = pd.read_csv('full_mlb_events_2026.csv')
+    statcast['game_date'] = pd.to_datetime(statcast['game_date'])
+    # 전체 팀 데이터를 병합하여 데이터셋 규모 확대
+    schedule = schedule_and_record(2026, 'LAD') # 필요시 팀 리스트 루프 처리
+    schedule['Date'] = pd.to_datetime(schedule['Date'])
+    schedule['target'] = schedule['W/L'].apply(lambda x: 1 if x == 'W' else 0)
+    return pd.merge(statcast, schedule, left_on='game_date', right_on='Date', how='inner')
 
-# 2. 통계적 승리 기여도 분석 엔진
-def run_victory_impact_analysis(df):
-    df_clean = df.select_dtypes(include=[np.number]).dropna()
-    features = [c for c in ['whiff_percent', 'pitch_velocity', 'spin_rate'] if c in df_clean.columns]
-    
-    if len(features) > 1:
-        X = df_clean[features]
-        y = df_clean.iloc[:, 0] # 타겟 지표
-        model = LinearRegression().fit(X, y)
-        return pd.DataFrame({'Indicator': features, 'Victory_Impact': model.coef_})
-    return pd.DataFrame()
+# 2. 승리 기여도 분석 및 예측 모델 (2번 적용)
+def run_model_and_report(df):
+    features = ['release_speed', 'launch_speed', 'launch_angle', 'estimated_ba_using_speedangle']
+    X = df[features].fillna(0)
+    y = df['target']
+    model = RandomForestClassifier(n_estimators=100).fit(X, y)
+    return model, features
+
+# 
 
 # 3. 메인 인터페이스
 st.set_page_config(layout="wide")
-st.title("⚾ MLB AI 안전 데이터 수집 및 승리 진단 v17.1")
+st.title("⚾ MLB AI 승리 기여도 진단 엔진 v19.2")
 
-if st.sidebar.button("안전 모드 데이터 동기화 및 분석"):
-    with st.spinner("서버 차단 우회 데이터 수집 및 회귀 모델 연산 중..."):
-        df = collect_safe_data()
-        if df is not None:
-            analytics = run_victory_impact_analysis(df)
-            
-            st.subheader("📌 데이터 기반 승리 기여도 진단")
-            st.dataframe(analytics)
-            
-            fig = px.bar(analytics, x='Indicator', y='Victory_Impact', color='Victory_Impact')
-            st.plotly_chart(fig, use_container_width=True)
-            
-            st.success("시스템 정상 작동: 안전한 데이터 기반 진단이 완료되었습니다.")
-        else:
-            st.error("데이터 수집 실패. 네트워크 환경을 확인하세요.")
+if st.sidebar.button("데이터 분석 및 진단 시작"):
+    with st.spinner("데이터 병합 및 AI 학습 중..."):
+        df = get_ready_to_train_data()
+        model, feats = run_model_and_report(df)
+        
+        # 기여도 리포트 출력
+        st.subheader("📊 핵심 승리 기여 지표 (Feature Importance)")
+        importance = pd.DataFrame({'Metric': feats, 'Impact': model.feature_importances_})
+        st.bar_chart(importance.set_index('Metric'))
+        
+        st.success("데이터 진단 완료: 위 지표들이 현재 팀 승률에 가장 큰 영향을 주고 있습니다.")
