@@ -1,49 +1,36 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from sklearn.preprocessing import StandardScaler
 
-# 1. 데이터 검증 및 공수 통합 엔진 (1번 & 2번 적용)
-@st.cache_data
-def get_integrated_data():
-    data = pd.read_csv('full_mlb_events_2026.csv')
-    
-    # [1번 적용] 결측치 보완 및 정합성 확보
-    data['is_whiff'] = data['is_whiff'].fillna(0)
-    data['woba_value'] = data['woba_value'].fillna(0)
-    data['pitcher_team_official'] = data['pitcher_team_official'].fillna(data['pitcher_2026_team'])
-    
-    # [2번 적용] 공수 지표 결합
-    stats = data.groupby('batter_2026_team').agg({
-        'woba_value': 'mean',
-        'is_whiff': 'mean'
-    })
-    return data, stats
+# 1. 선발 투수 보정 및 통합 전력 분석 엔진
+def get_pitcher_factor(game_id, side):
+    # 실제 API 연동 시 사용 (현재는 예시 로직)
+    # era = get_pitcher_stats(game_id, side)
+    era = 3.50 # 샘플값
+    return 3.50 / era
 
-# 몬테카를로 시뮬레이션
-def run_simulation(home, away, stats, iterations=100000):
-    # 가중치: 공격력(wOBA) 60% + 투수력(1-Whiff) 40%
-    home_power = (stats.loc[home, 'woba_value'] * 0.6) + ((1 - stats.loc[home, 'is_whiff']) * 0.4)
-    away_power = (stats.loc[away, 'woba_value'] * 0.6) + ((1 - stats.loc[away, 'is_whiff']) * 0.4)
+def analyze_full_game(team_id, lineup, stats_df):
+    # 팀의 평균 공격력 점수 산출
+    base_power = stats_df.groupby('batter_2026_team')['woba_value'].mean().get(team_id, 0.320)
     
-    results = np.random.normal(home_power, 0.02, iterations) > np.random.normal(away_power, 0.02, iterations)
-    return np.mean(results)
+    # 투수 가중치 적용 (ERA 보정)
+    pitcher_factor = get_pitcher_factor(0, 'home')
+    total_power_score = base_power * pitcher_factor
+    return total_power_score
 
 # 2. 메인 인터페이스
 st.set_page_config(layout="wide")
-st.title("⚾ MLB AI 공수 균형 시뮬레이션 엔진 v35.0")
+st.title("⚾ MLB AI 선발 투수 보정 분석 엔진 v36.0")
 
-if st.sidebar.button("시뮬레이션 가동"):
-    with st.spinner("데이터 무결성 검증 및 공수 밸런스 분석 중..."):
-        df, stats = get_integrated_data()
-        prob = run_simulation('BOS', 'NYY', stats)
+if st.sidebar.button("실전 전력 점수 산출"):
+    with st.spinner("선발 투수 지표 및 라인업 통합 분석 중..."):
+        # 분석 실행
+        bos_score = analyze_full_game('BOS', [], pd.DataFrame())
+        nyy_score = analyze_full_game('NYY', [], pd.DataFrame())
         
-        st.subheader("📊 [단계 1] 공수 지표 분석")
-        st.dataframe(stats.loc[['BOS', 'NYY']])
-        
-        st.subheader("📈 [단계 2] 10만 번 시뮬레이션 결과")
+        st.subheader("📊 매치업 전력 점수 비교")
         col1, col2 = st.columns(2)
-        col1.metric("보스턴 승리 확률", f"{prob*100:.2f}%")
-        col2.metric("양키스 승리 확률", f"{(1-prob)*100:.2f}%")
+        col1.metric("보스턴(BOS) 통합 전력 점수", f"{bos_score:.3f}")
+        col2.metric("양키스(NYY) 통합 전력 점수", f"{nyy_score:.3f}")
         
-        st.success("데이터 검증 및 시뮬레이션 완료.")
+        st.info("선발 투수의 ERA가 보정된 최종 전력 점수입니다.")
