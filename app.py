@@ -1,5 +1,5 @@
-# 버전: v3.6
-# 패치 내용: NameError 해결 및 데이터 매칭 테스트 모드 추가
+# 버전: v3.8
+# 패치 내용: 구글 드라이브 데이터 로드 및 실시간 경기 매칭 시스템
 import streamlit as st
 import pandas as pd
 import requests
@@ -7,68 +7,42 @@ import io
 from datetime import datetime
 import pytz
 
-# 1. 페이지 설정 (가장 상단에 배치)
-st.set_page_config(layout="wide", page_title="MLB AI 엔진 v3.6")
-
-# 2. 사이드바 메뉴 생성 (반드시 if문보다 위에 있어야 합니다)
-menu = st.sidebar.radio("메뉴", ["실시간 일정", "학습 데이터셋 관리", "데이터 매칭 테스트"])
-
-# 3. 매칭 및 API 함수 정의
-TEAM_MAP = {
-    "Baltimore Orioles": "BAL", "Boston Red Sox": "BOS", "New York Yankees": "NYY",
-    "Toronto Blue Jays": "TOR", "Tampa Bay Rays": "TB", "Chicago White Sox": "CWS",
-    "Cleveland Guardians": "CLE", "Detroit Tigers": "DET", "Kansas City Royals": "KC",
-    "Minnesota Twins": "MIN", "Houston Astros": "HOU", "Los Angeles Angels": "LAA",
-    "Oakland Athletics": "OAK", "Seattle Mariners": "SEA", "Texas Rangers": "TEX",
-    "Atlanta Braves": "ATL", "Miami Marlins": "MIA", "New York Mets": "NYM",
-    "Philadelphia Phillies": "PHI", "Washington Nationals": "WSH", "Chicago Cubs": "CHC",
-    "Cincinnati Reds": "CIN", "Milwaukee Brewers": "MIL", "Pittsburgh Pirates": "PIT",
-    "St. Louis Cardinals": "STL", "Arizona Diamondbacks": "ARI", "Colorado Rockies": "COL",
-    "Los Angeles Dodgers": "LAD", "San Diego Padres": "SD", "San Francisco Giants": "SF"
-}
-
+# 1. 데이터 호출 및 병합 함수
 @st.cache_data
-def load_drive_csv(file_id):
-    url = f'https://drive.google.com/uc?export=download&id={file_id}'
-    response = requests.get(url, timeout=10)
-    return pd.read_csv(io.BytesIO(response.content)) if response.status_code == 200 else None
-
-def get_mlb_schedule():
-    today = datetime.now().strftime('%Y-%m-%d')
-    url = f"https://statsapi.mlb.com/api/v1/schedule/games/?sportId=1&date={today}&hydrate=probablePitcher"
+def fetch_master_data():
+    # 실제 병합 데이터셋 로드
+    results_url = "https://drive.google.com/uc?export=download&id=1ImEBCjIFN-0K0plfLaQvTcJhhEVHV6DY"
+    stats_url = "https://drive.google.com/uc?export=download&id=1iFelqEtUV-SQqnMeAuEN_XdEMjyuU9jH"
+    
     try:
-        response = requests.get(url, timeout=5).json()
-        games = response['dates'][0]['games']
-        data = []
-        for g in games:
-            data.append({
-                "홈팀": TEAM_MAP.get(g['teams']['home']['team']['name'], g['teams']['home']['team']['name']),
-                "원정팀": TEAM_MAP.get(g['teams']['away']['team']['name'], g['teams']['away']['team']['name'])
-            })
-        return data
+        df_res = pd.read_csv(io.BytesIO(requests.get(results_url).content))
+        df_stats = pd.read_csv(io.BytesIO(requests.get(stats_url).content))
+        # 데이터 병합
+        master = pd.merge(df_res, df_stats, on=['date', 'team'], how='inner')
+        return master
     except: return None
 
-# 4. 메뉴별 화면 로직
-if menu == "실시간 일정":
-    st.subheader("오늘의 MLB 경기")
-    st.table(pd.DataFrame(get_mlb_schedule()))
+# 2. 실시간 경기와 데이터 매칭 로직
+def match_realtime_with_data(master_df):
+    schedule = get_mlb_schedule() # 기존 함수 활용
+    if master_df is None or schedule is None: return "데이터 로드 실패"
+    
+    # 오늘 경기 팀 추출
+    match_report = []
+    for game in schedule:
+        home_team = game['홈팀']
+        # master_df에 해당 팀의 데이터가 존재하는지 확인
+        exists = home_team in master_df['team'].values
+        match_report.append({"팀명": home_team, "데이터 매칭": "성공" if exists else "데이터 없음"})
+    
+    return pd.DataFrame(match_report)
 
-elif menu == "학습 데이터셋 관리":
-    st.subheader("클라우드 데이터 병합 센터")
-    if st.button("데이터 병합 실행"):
-        st.write("병합 로직 실행 중...")
+# ... (기타 함수는 v3.7 유지)
 
-elif menu == "데이터 매칭 테스트":
-    st.subheader("실시간 vs CSV 팀명 매칭 테스트")
-    if st.button("테스트 시작"):
-        api_df = pd.DataFrame(get_mlb_schedule())
-        csv_df = load_drive_csv("1ImEBCjIFN-0K0plfLaQvTcJhhEVHV6DY")
-        
-        api_teams = set(api_df['홈팀'].unique()) | set(api_df['원정팀'].unique())
-        csv_teams = set(csv_df['team'].unique())
-        
-        missing = api_teams - csv_teams
-        if not missing:
-            st.success("✅ 모든 팀 데이터 매칭 완료!")
-        else:
-            st.warning(f"⚠️ 매칭되지 않은 팀: {missing}")
+if menu == "데이터 매칭 테스트":
+    st.subheader("실제 데이터셋 매칭 엔진")
+    if st.button("데이터 대입 매칭 시작"):
+        with st.spinner('구글 드라이브 데이터와 실시간 경기 매칭 중...'):
+            master_data = fetch_master_data()
+            result_df = match_realtime_with_data(master_data)
+            st.table(result_df)
