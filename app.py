@@ -1,37 +1,52 @@
 import streamlit as st
 import pandas as pd
 import statsapi
-import os  # 여기서 os를 불러옵니다 (별도 설치 불필요)
+import os
 from datetime import datetime
 
-# --- [데이터 로드 함수: os 사용] ---
-def check_and_load_data(file_path):
-    # os.path.exists를 사용해 파일 존재 여부를 안전하게 확인
-    if os.path.exists(file_path):
-        return pd.read_csv(file_path)
-    else:
+# --- [데이터 처리 엔진] ---
+def get_game_data():
+    today = datetime.now().strftime('%Y-%m-%d')
+    try:
+        games = statsapi.schedule(date=today)
+        if not games:
+            return None
+        
+        # 데이터를 표 형식(DataFrame)으로 변환
+        game_list = []
+        for game in games:
+            game_list.append({
+                "경기 ID": game.get('game_id'),
+                "원정팀": game.get('away_name'),
+                "홈팀": game.get('home_name'),
+                "상태": game.get('status'),
+                "경기 시간": game.get('game_time')
+            })
+        return pd.DataFrame(game_list)
+    except Exception as e:
         return None
 
-# --- [메인 엔진] ---
+# --- [메인 인터페이스] ---
 def main():
-    st.title("⚾ MLB 최종 마스터 엔진 (v24.0)")
+    st.set_page_config(page_title="MLB 분석 엔진", layout="wide")
+    st.title("⚾ MLB 마스터 엔진 (v24.0)")
     
-    menu = st.sidebar.selectbox("메뉴", ["실시간 경기 정보", "로컬 CSV 분석"])
+    menu = st.sidebar.selectbox("메뉴", ["실시간 경기 정보", "통합 분석 데이터"])
     
     if menu == "실시간 경기 정보":
-        if st.button("오늘 경기 불러오기"):
-            # statsapi 호출
-            today = datetime.now().strftime('%Y-%m-%d')
-            data = statsapi.schedule(date=today)
-            st.write(data)
+        st.subheader(f"오늘 ({datetime.now().strftime('%Y-%m-%d')}) MLB 경기 현황")
+        if st.button("실시간 데이터 불러오기"):
+            with st.spinner("데이터를 가져오는 중입니다..."):
+                df = get_game_data()
+                if df is not None:
+                    st.success("데이터 호출 성공!")
+                    st.table(df) # 데이터를 표 형태로 출력
+                else:
+                    st.warning("오늘 진행 중인 경기가 없거나 정보를 가져올 수 없습니다.")
 
-    elif menu == "로컬 CSV 분석":
-        file_path = 'full_mlb_events_2026.csv'
-        df = check_and_load_data(file_path)
-        if df is not None:
-            st.dataframe(df)
-        else:
-            st.warning(f"파일을 찾을 수 없습니다: {file_path}")
+    elif menu == "통합 분석 데이터":
+        st.write("통합 분석 데이터 모듈입니다.")
+        # 추후 여기에 추가 로직을 넣습니다.
 
 if __name__ == "__main__":
     main()
